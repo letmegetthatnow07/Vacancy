@@ -1,10 +1,12 @@
 {
   "ok": true,
-  "schemaVersion": "1.7",
-  "runMode": "nightly",
-  "totalListings": 6,
+  "totalListings": 8,
+  "archivedCount": 25,
+  "lastUpdated": "2025-11-01T13:42:01.790202Z",
+  "source": "github-actions-ocr",
+  "schemaVersion": "1.9",
+  "runMode": "normal",
   "sourcesTried": [],
-  "lastUpdated": "2025-10-04T13:32:00.668937Z",
   "mergedUpdates": 0,
   "sourcesByStatus": [
     {
@@ -17,7 +19,7 @@
     },
     {
       "host": "bssc.bihar.gov.in",
-      "items": 2
+      "items": 0
     },
     {
       "host": "careers.sac.gov.in",
@@ -41,7 +43,7 @@
     },
     {
       "host": "nests.tribal.gov.in",
-      "items": 1
+      "items": 0
     },
     {
       "host": "opportunities.rbi.org.in",
@@ -65,7 +67,7 @@
     },
     {
       "host": "ssc.gov.in",
-      "items": 1
+      "items": 0
     },
     {
       "host": "tnpsc.gov.in",
@@ -73,7 +75,7 @@
     },
     {
       "host": "www.ibps.in",
-      "items": 1
+      "items": 0
     },
     {
       "host": "www.isro.gov.in",
@@ -85,7 +87,7 @@
     },
     {
       "host": "www.rrbapply.gov.in",
-      "items": 1
+      "items": 0
     },
     {
       "host": "www.upsc.gov.in",
@@ -96,12 +98,10 @@
       "items": 0
     }
   ],
-  "archivedCount": 3,
   "learning": {
     "hosts": 0,
-    "slugs": 1,
-    "patterns": {
-      "rrbcdg.gov.in": 1
-    }
-  }
+    "slugs": 0,
+    "patterns": {}
+  },
+  "appliedCount": 0
 }

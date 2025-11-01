@@ -39,19 +39,16 @@ html,body{background:var(--bg);color:var(--text);font-family:Inter,system-ui,-ap
 .rowline .muted{color:var(--muted)}
 .rowline:last-child{border-bottom:none}
 
-/* Actions rows */
 .actions-row{border-top:1px dashed var(--line);padding:10px 12px}
 .actions-row.row1{display:grid;grid-template-columns:1fr 1fr;align-items:center}
 .actions-row.row1 .left{justify-self:start}
 .actions-row.row1 .right{justify-self:end}
 .actions-row.row2{display:grid;grid-template-columns:1fr 1fr;align-items:center;gap:10px}
 
-/* Groups */
 .group{display:flex;align-items:center;min-width:0}
 .group.vote{gap:10px;flex-wrap:nowrap}
 .group.interest{gap:10px;flex-wrap:nowrap;justify-content:flex-end}
 
-/* Buttons and chips */
 .btn{border-radius:999px;background:#fff;border:1px solid var(--btn-line);color:var(--text);cursor:pointer;font-size:11.5px;padding:5px 9px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:98px;max-width:140px}
 .btn.primary{background:var(--primary-bg);border-color:var(--primary-line);color:var(--primary)}
 .btn.ok{background:var(--ok-bg);border-color:var(--ok-line);color:var(--ok)}
@@ -67,7 +64,6 @@ html,body{background:var(--bg);color:var(--text);font-family:Inter,system-ui,-ap
 .vote-btn.right{background:var(--ok-bg);border-color:var(--ok-line);color:var(--ok)}
 .vote-btn.wrong{background:var(--danger-bg);border-color:var(--danger-line);color:var(--danger)}
 
-/* Only top verify tick; bottom vote icons hidden once verified via JS */
 .card.verified .group.vote .vote-btn{display:none}
 
 .verify-top{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;border:1px solid var(--ok-line);background:var(--ok-bg);color:var(--ok);font-size:12px}
@@ -76,13 +72,11 @@ html,body{background:var(--bg);color:var(--text);font-family:Inter,system-ui,-ap
 .badge-done{padding:2px 8px;border:1px solid var(--line);border-radius:12px;background:#f8fafc;color:#0f172a;margin-left:8px;font-size:12px}
 .trusted{background:var(--ok-bg);border-color:var(--ok-line);color:var(--ok)}
 
-/* Modals */
 .modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(15,23,42,.35);z-index:20;padding:16px}
 .modal.hidden{display:none}
 .modal:not(.hidden){display:flex}
 .modal .modal-body{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:0 20px 44px rgba(15,23,42,.12);width:clamp(320px,92vw,640px);max-width:640px;box-sizing:border-box;overflow:hidden;display:flex;flex-direction:column;position:relative}
 
-/* Header: title hidden; top-right red ✗ button */
 .modal .modal-head{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;margin-bottom:8px}
 .modal .modal-head h3.hidden{display:none}
 .modal .modal-head .close-top{justify-self:end;border-radius:8px;background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger-line);padding:6px 10px;cursor:pointer;line-height:1}
@@ -91,7 +85,6 @@ html,body{background:var(--bg);color:var(--text);font-family:Inter,system-ui,-ap
 .modal .form{display:flex;flex-direction:column}
 .modal .form input,.modal .form textarea,.modal .form select{width:100%;background:#fff;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:6px;margin-bottom:10px;box-sizing:border-box}
 
-/* Footer: center primary button only */
 .modal-actions{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;margin-top:4px}
 .modal-actions .slot-left{justify-self:start}
 .modal-actions .slot-middle{justify-self:center}
@@ -118,37 +111,121 @@ html,body{background:var(--bg);color:var(--text);font-family:Inter,system-ui,-ap
 #snackbar{position:fixed;left:50%;bottom:64px;transform:translateX(-50%);background:#0f172a;color:#ffffff;border:1px solid #1f2740;border-radius:12px;padding:10px 12px;font-size:13px;display:none;align-items:center;gap:12px;z-index:35}
 #snackbar .count{color:#c7d2fe}
 
-/* Professional Confirmation Modal - NEW */
-.confirm-modal{position:fixed;inset:0;z-index:1001;display:flex;align-items:center;justify-content:center;animation:fadeInModal 0.2s ease}
+/* Professional Confirmation Modal - FIXED CENTERING */
+.confirm-modal{
+  position:fixed;
+  top:0;
+  left:0;
+  right:0;
+  bottom:0;
+  z-index:1001;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  animation:fadeInModal 0.2s ease;
+  padding:20px
+}
 
-.confirm-modal-overlay{position:absolute;inset:0;background:rgba(15,23,42,.5);backdrop-filter:blur(2px)}
+.confirm-modal-overlay{
+  position:fixed;
+  top:0;
+  left:0;
+  right:0;
+  bottom:0;
+  background:rgba(15,23,42,.5);
+  backdrop-filter:blur(2px);
+  z-index:1000
+}
 
-.confirm-modal-content{position:relative;z-index:1002;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px;max-width:400px;width:90%;box-shadow:0 20px 60px rgba(15,23,42,.3);text-align:center}
+.confirm-modal-content{
+  position:relative;
+  z-index:1002;
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:24px;
+  max-width:400px;
+  width:90%;
+  box-shadow:0 20px 60px rgba(15,23,42,.3);
+  text-align:center
+}
 
-.confirm-modal-content h3{margin:0 0 12px 0;font-size:18px;font-weight:600;color:var(--primary);letter-spacing:0.3px}
+.confirm-modal-content h3{
+  margin:0 0 12px 0;
+  font-size:18px;
+  font-weight:600;
+  color:var(--primary);
+  letter-spacing:0.3px
+}
 
-.confirm-modal-content p{margin:0 0 20px 0;font-size:15px;color:var(--text);line-height:1.5}
+.confirm-modal-content p{
+  margin:0 0 20px 0;
+  font-size:15px;
+  color:var(--text);
+  line-height:1.5
+}
 
-.confirm-modal-buttons{display:flex;gap:10px;justify-content:center;flex-direction:row-reverse}
+.confirm-modal-buttons{
+  display:flex;
+  gap:10px;
+  justify-content:center;
+  flex-direction:row-reverse
+}
 
-.confirm-modal-buttons .btn{min-width:90px;padding:8px 16px;font-size:13px;font-weight:500}
+.confirm-modal-buttons .btn{
+  min-width:90px;
+  padding:8px 16px;
+  font-size:13px;
+  font-weight:500
+}
 
-.confirm-modal-buttons .cancel-btn{background:#fff;border:1px solid var(--line);color:var(--muted)}
+.confirm-modal-buttons .cancel-btn{
+  background:#fff;
+  border:1px solid var(--line);
+  color:var(--muted)
+}
 
-.confirm-modal-buttons .cancel-btn:hover{background:var(--bg);color:var(--text)}
+.confirm-modal-buttons .cancel-btn:hover{
+  background:var(--bg);
+  color:var(--text)
+}
 
-.confirm-modal-buttons .confirm-btn{background:var(--primary);border:1px solid var(--primary-line);color:#fff}
+.confirm-modal-buttons .confirm-btn{
+  background:var(--primary);
+  border:1px solid var(--primary-line);
+  color:#fff
+}
 
-.confirm-modal-buttons .confirm-btn:hover{background:#1e40af;opacity:0.9}
+.confirm-modal-buttons .confirm-btn:hover{
+  background:#1e40af;
+  opacity:0.9
+}
 
-.confirm-modal-buttons .confirm-btn:focus{outline:2px solid var(--primary);outline-offset:2px}
+.confirm-modal-buttons .confirm-btn:focus{
+  outline:2px solid var(--primary);
+  outline-offset:2px
+}
 
-@keyframes fadeInModal{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}
+@keyframes fadeInModal{
+  from{opacity:0;transform:scale(0.95)}
+  to{opacity:1;transform:scale(1)}
+}
 
 @media(max-width:480px){
-  .confirm-modal-content{width:95%;padding:20px}
-  .confirm-modal-content h3{font-size:16px}
-  .confirm-modal-content p{font-size:14px}
-  .confirm-modal-buttons{flex-direction:column}
-  .confirm-modal-buttons .btn{width:100%}
+  .confirm-modal-content{
+    width:95%;
+    padding:20px
+  }
+  .confirm-modal-content h3{
+    font-size:16px
+  }
+  .confirm-modal-content p{
+    font-size:14px
+  }
+  .confirm-modal-buttons{
+    flex-direction:column
+  }
+  .confirm-modal-buttons .btn{
+    width:100%
+  }
 }

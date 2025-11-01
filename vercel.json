@@ -1,0 +1,26 @@
+{
+  "functions": {
+    "api/scrape-jobs.py": {
+      "maxDuration": 60,
+      "memory": 512
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/scrape-jobs",
+      "schedule": "30 1 * * *"
+    },
+    {
+      "path": "/api/scrape-jobs",
+      "schedule": "30 13 * * *"
+    }
+  ],
+  "github": {
+    "enabled": true,
+    "autoAlias": true,
+    "silent": true
+  },
+  "buildCommand": "echo 'No build needed'",
+  "outputDirectory": ".",
+  "public": true
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# qc_and_learn.py v2025-11-01-eligibility-filter
+# qc_and_learn.py v2025-11-01-final-removal-policy
 
 import json, pathlib, re, argparse, urllib.parse
 from datetime import datetime, timedelta, date
@@ -355,7 +355,7 @@ for j in jobs:
     jid = j["id"]
     h=host(j.get("applyLink"))
 
-    # NEW: Check eligibility BEFORE processing
+    # Check eligibility BEFORE processing
     is_eligible, reason = check_eligibility(j)
     if not is_eligible:
         if "Hindi" in reason:
@@ -408,24 +408,32 @@ for j in jobs:
         if c:
             j["numberOfPosts"]=c
 
-    # If job is applied, keep it visible regardless of deadline
+    # CRITICAL FIX 1: If job is applied, keep it visible (don't remove!)
     if jid in applied_ids:
         primary.append(j)
         continue
 
-    # For non-applied jobs, check expiry
+    # CRITICAL FIX 2: Check exam_done + 7 days (ONLY removal reason for non-applied!)
+    if jid in user_state:
+        state_rec = user_state.get(jid)
+        if state_rec and state_rec.get("action") == "exam_done":
+            ts = state_rec.get("ts")
+            if ts:
+                try:
+                    done_date = datetime.fromisoformat(ts.replace("Z","")).date()
+                    days_since_done = (today - done_date).days
+                    if days_since_done > 7:
+                        j.setdefault("flags",{})["removed_reason"]="auto_archived_exam_done_7d"
+                        archived.append(j)
+                        continue
+                except:
+                    pass
+
+    # CRITICAL FIX 3: Don't remove for expired deadline! Keep all jobs!
     if last and last < today:
-        days_expired = (today - last).days
-        if days_expired > 7:
-            j.setdefault("flags",{})["removed_reason"]="auto_archived_expired_7d"
-            j.setdefault("flags",{})["auto_archived"]="expired_7d"
-            archived.append(j)
-            continue
-        else:
-            other.append(j)
-            continue
-    
-    primary.append(j)
+        other.append(j)
+    else:
+        primary.append(j)
 
 def host_only(u):
     try: return urllib.parse.urlparse(u or "").netloc.lower()

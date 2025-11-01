@@ -1,11 +1,9 @@
 name: OCR Processing Only
 
 on:
-  # Webhook trigger from Vercel
   repository_dispatch:
     types: [process-pdfs]
   
-  # Manual trigger for testing
   workflow_dispatch:
     inputs:
       pdf_urls:
@@ -19,7 +17,7 @@ permissions:
 jobs:
   ocr-process:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     
     steps:
       - name: Checkout
@@ -31,118 +29,264 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
-      - name: Install OCR dependencies
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y tesseract-ocr tesseract-ocr-hin poppler-utils
-          pip install PyPDF2 pdfplumber pdf2image pytesseract pillow requests
+          sudo apt-get install -y \
+            tesseract-ocr \
+            tesseract-ocr-hin \
+            poppler-utils \
+            libpoppler-cpp-dev
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: Parse webhook payload
         id: payload
         run: |
           if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
             echo '${{ toJson(github.event.client_payload.pdfs) }}' > pdfs.json
+            MODE='${{ github.event.client_payload.mode }}'
+            if [ -z "$MODE" ]; then MODE="normal"; fi
+            echo "mode=$MODE" >> $GITHUB_OUTPUT
           else
             echo '${{ inputs.pdf_urls }}' > pdfs.json
+            echo "mode=manual" >> $GITHUB_OUTPUT
           fi
+          echo "=== Payload ===" 
           cat pdfs.json
+          echo "=== Mode ===" 
+          echo "Mode: $MODE"
 
-      - name: Download and process PDFs
+      - name: Download PDFs
         run: |
+          mkdir -p .cache tmp
           python3 << 'PYTHON_SCRIPT'
-          import json, requests, subprocess, sys
-          from pathlib import Path
+          import json
+          import requests
+          import pathlib
+          import time
+          from urllib.parse import urlparse
           
           pdfs_data = json.load(open('pdfs.json'))
-          results = []
+          download_log = []
           
-          for pdf_info in pdfs_data:
+          for i, pdf_info in enumerate(pdfs_data):
               url = pdf_info.get('url')
               source = pdf_info.get('source', 'unknown')
               
               if not url:
                   continue
               
-              # Download PDF
-              filename = f".cache/{Path(url).name}"
-              Path(".cache").mkdir(exist_ok=True)
+              # Generate safe filename
+              filename = f".cache/pdf_{i}_{pathlib.Path(urlparse(url).path).name}"
               
               try:
-                  r = requests.get(url, timeout=30)
+                  print(f"[{i+1}/{len(pdfs_data)}] Downloading: {url[:60]}...")
+                  
+                  r = requests.get(
+                      url,
+                      headers={'User-Agent': 'Mozilla/5.0'},
+                      timeout=30,
+                      verify=False
+                  )
                   r.raise_for_status()
-                  Path(filename).write_bytes(r.content)
-                  print(f"Downloaded: {filename}")
-              except Exception as e:
-                  print(f"Download failed: {url} - {e}")
-                  continue
+                  
+                  size = len(r.content) / 1024 / 1024  # MB
+                  pathlib.Path(filename).write_bytes(r.content)
+                  
+                  download_log.append({
+                      'url': url,
+                      'filename': filename,
+                      'size_mb': round(size, 2),
+                      'status': 'success'
+                  })
+                  
+                  print(f"  ✓ Downloaded ({size:.2f} MB)")
+                  time.sleep(0.5)
               
-              # Run OCR parser
+              except requests.exceptions.SSLError:
+                  try:
+                      print(f"  ⚠ SSL error, retrying without verification...")
+                      r = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=30, verify=False)
+                      r.raise_for_status()
+                      pathlib.Path(filename).write_bytes(r.content)
+                      download_log.append({'url': url, 'filename': filename, 'status': 'success_nossl'})
+                      print(f"  ✓ Downloaded (no SSL)")
+                  except Exception as e:
+                      download_log.append({'url': url, 'status': 'failed', 'error': str(e)})
+                      print(f"  ✗ Failed: {e}")
+              
+              except Exception as e:
+                  download_log.append({'url': url, 'status': 'failed', 'error': str(e)})
+                  print(f"  ✗ Failed: {e}")
+          
+          # Write log
+          with open('tmp/download_log.json', 'w') as f:
+              json.dump(download_log, f, indent=2)
+          
+          successful = sum(1 for x in download_log if x['status'].startswith('success'))
+          print(f"\n✓ Downloaded {successful}/{len(pdfs_data)} PDFs")
+          PYTHON_SCRIPT
+
+      - name: Extract text with OCR (Hindi + English)
+        run: |
+          python3 << 'PYTHON_SCRIPT'
+          import json
+          import subprocess
+          import pathlib
+          import time
+          from pathlib import Path
+          
+          pdfs = list(Path('.cache').glob('pdf_*'))
+          results = []
+          
+          print(f"Starting OCR on {len(pdfs)} PDFs...")
+          
+          for i, pdf_file in enumerate(pdfs):
+              print(f"\n[{i+1}/{len(pdfs)}] Processing: {pdf_file.name}")
+              
               try:
                   result = subprocess.run(
-                      ['python', 'tools/pdf_parser.py', filename, '--source', source],
+                      ['python3', 'tools/pdf_parser.py', str(pdf_file)],
                       capture_output=True,
                       text=True,
-                      timeout=120
+                      timeout=180
                   )
                   
                   if result.returncode == 0:
                       # Parser outputs JSONL to stdout
                       for line in result.stdout.strip().split('\n'):
                           if line.strip():
-                              results.append(json.loads(line))
+                              try:
+                                  job = json.loads(line)
+                                  results.append(job)
+                                  print(f"  ✓ Extracted: {job.get('title', 'N/A')[:50]}")
+                              except json.JSONDecodeError:
+                                  print(f"  ⚠ Invalid JSON in parser output")
+                      
+                      if result.stderr:
+                          print(f"  [stderr] {result.stderr[:200]}")
                   else:
-                      print(f"OCR failed: {filename} - {result.stderr}")
+                      print(f"  ✗ OCR failed (code {result.returncode})")
+                      if result.stderr:
+                          print(f"  Error: {result.stderr[:300]}")
               
+              except subprocess.TimeoutExpired:
+                  print(f"  ✗ OCR timeout (>180s)")
               except Exception as e:
-                  print(f"Processing error: {filename} - {e}")
+                  print(f"  ✗ Processing error: {e}")
           
           # Write results
-          Path('tmp').mkdir(exist_ok=True)
-          with open('tmp/ocr_results.jsonl', 'w') as f:
+          pathlib.Path('tmp').mkdir(exist_ok=True)
+          with open('tmp/ocr_results.jsonl', 'w', encoding='utf-8') as f:
               for job in results:
                   f.write(json.dumps(job, ensure_ascii=False) + '\n')
           
-          print(f"\n✓ Processed {len(results)} jobs from {len(pdfs_data)} PDFs")
+          print(f"\n✓ Extracted {len(results)} jobs from {len(pdfs)} PDFs")
           PYTHON_SCRIPT
 
-      - name: Merge OCR results into data.json
+      - name: Run schema merge
+        run: |
+          mkdir -p tmp
+          if [ ! -f tmp/ocr_results.jsonl ]; then
+            touch tmp/ocr_results.jsonl
+          fi
+          
+          python3 tools/schema_merge.py data.json tmp/ocr_results.jsonl data.json
+          echo "✓ Schema merge complete"
+          
+          # Show stats
+          echo "=== Data Stats ==="
+          python3 << 'PYTHON_SCRIPT'
+          import json
+          data = json.load(open('data.json'))
+          print(f"Active listings: {len(data.get('jobListings', []))}")
+          print(f"Archived listings: {len(data.get('archivedListings', []))}")
+          PYTHON_SCRIPT
+
+      - name: Run QC checks
+        run: |
+          python3 qc_checks.py
+          echo "✓ QC checks complete"
+
+      - name: Run QC + Learn
+        run: |
+          MODE='${{ steps.payload.outputs.mode }}'
+          if [ -z "$MODE" ]; then MODE="nightly"; fi
+          
+          echo "Running QC + Learn (mode: $MODE)"
+          python3 qc_and_learn.py --mode "$MODE"
+          echo "✓ QC + Learn complete"
+
+      - name: Generate health report
         run: |
           python3 << 'PYTHON_SCRIPT'
           import json
           from pathlib import Path
+          from datetime import datetime
           
-          # Load existing data
+          # Load latest data
+          data = json.load(open('data.json'))
+          
+          # Generate health report
+          health = {
+              'ok': True,
+              'totalListings': len(data.get('jobListings', [])),
+              'archivedCount': len(data.get('archivedListings', [])),
+              'lastUpdated': datetime.utcnow().isoformat() + 'Z',
+              'source': 'github-actions-ocr'
+          }
+          
+          # Merge with existing health.json
+          try:
+              existing = json.load(open('health.json'))
+              health.update(existing)
+          except:
+              pass
+          
+          with open('health.json', 'w') as f:
+              json.dump(health, f, indent=2)
+          
+          print(f"✓ Health report: {health['totalListings']} active listings")
+          PYTHON_SCRIPT
+
+      - name: Validate and prepare commit
+        run: |
+          echo "=== Files to commit ==="
+          ls -lh data.json learn_registry.json health.json 2>/dev/null || echo "Some files missing"
+          
+          echo ""
+          echo "=== Data integrity check ==="
+          python3 << 'PYTHON_SCRIPT'
+          import json
+          
+          # Validate data.json
           try:
               data = json.load(open('data.json'))
+              listings = data.get('jobListings', [])
+              print(f"✓ data.json: {len(listings)} listings")
+          except Exception as e:
+              print(f"✗ data.json validation failed: {e}")
+              exit(1)
+          
+          # Validate learn_registry.json
+          try:
+              learn = json.load(open('learn_registry.json'))
+              print(f"✓ learn_registry.json: Valid")
           except:
-              data = {'jobListings': [], 'archivedListings': []}
+              print(f"⚠ learn_registry.json: Not created yet (normal on first run)")
           
-          # Load OCR results
-          ocr_jobs = []
-          if Path('tmp/ocr_results.jsonl').exists():
-              with open('tmp/ocr_results.jsonl') as f:
-                  for line in f:
-                      if line.strip():
-                          ocr_jobs.append(json.loads(line))
-          
-          # Merge by ID (avoid duplicates)
-          existing_ids = {j['id'] for j in data['jobListings']}
-          new_jobs = [j for j in ocr_jobs if j['id'] not in existing_ids]
-          
-          data['jobListings'].extend(new_jobs)
-          
-          # Update transparency
-          data.setdefault('transparencyInfo', {})
-          data['transparencyInfo']['ocrProcessed'] = len(ocr_jobs)
-          data['transparencyInfo']['ocrAdded'] = len(new_jobs)
-          data['transparencyInfo']['lastOcrRun'] = '{{ github.event.repository.updated_at }}'
-          
-          # Write atomically
-          with open('data.json', 'w', encoding='utf-8') as f:
-              json.dump(data, f, indent=2, ensure_ascii=False)
-          
-          print(f"✓ Merged {len(new_jobs)} new OCR jobs into data.json")
+          # Validate health.json
+          try:
+              health = json.load(open('health.json'))
+              print(f"✓ health.json: Valid")
+          except Exception as e:
+              print(f"⚠ health.json: {e}")
           PYTHON_SCRIPT
 
       - name: Commit results
@@ -150,14 +294,22 @@ jobs:
           git config user.name "OCR Bot"
           git config user.email "ocr-bot@users.noreply.github.com"
           
-          git add data.json
+          # Stage files
+          git add data.json health.json 2>/dev/null || true
+          if [ -f learn_registry.json ]; then
+            git add learn_registry.json
+          fi
           
+          # Check if there are changes
           if git diff --cached --quiet; then
-            echo "✓ No new OCR data to commit"
+            echo "✓ No new data to commit (database unchanged)"
           else
             git commit -m "chore: OCR processing complete" \
-              -m "Processed PDFs from Vercel scraper"
+              -m "Mode: ${{ steps.payload.outputs.mode }}" \
+              -m "Timestamp: $(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+              -m "Processed by GitHub Actions"
             git push
+            echo "✓ Committed and pushed changes"
           fi
 
       - name: Trigger Vercel rebuild
@@ -165,6 +317,24 @@ jobs:
           VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
         run: |
           if [ -n "$VERCEL_DEPLOY_HOOK" ]; then
-            curl -X POST "$VERCEL_DEPLOY_HOOK"
-            echo "✓ Triggered Vercel redeployment"
+            echo "Triggering Vercel redeployment..."
+            curl -X POST "$VERCEL_DEPLOY_HOOK" \
+              -H "Content-Type: application/json" \
+              --fail
+            echo ""
+            echo "✓ Vercel rebuild triggered"
+          else
+            echo "⚠ VERCEL_DEPLOY_HOOK not configured (skipping)"
+          fi
+
+      - name: Workflow summary
+        if: always()
+        run: |
+          echo "=== OCR Workflow Summary ==="
+          echo "Mode: ${{ steps.payload.outputs.mode }}"
+          echo "Timestamp: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          echo "Status: ${{ job.status }}"
+          
+          if [ -f data.json ]; then
+            python3 -c "import json; d=json.load(open('data.json')); print(f'Listings: {len(d.get(\"jobListings\", []))}')"
           fi

@@ -1,0 +1,107 @@
+{
+  "ok": true,
+  "schemaVersion": "1.7",
+  "runMode": "nightly",
+  "totalListings": 6,
+  "sourcesTried": [],
+  "lastUpdated": "2025-10-04T13:32:00.668937Z",
+  "mergedUpdates": 0,
+  "sourcesByStatus": [
+    {
+      "host": "apps.ursc.gov.in",
+      "items": 0
+    },
+    {
+      "host": "bpsc.bihar.gov.in",
+      "items": 0
+    },
+    {
+      "host": "bssc.bihar.gov.in",
+      "items": 2
+    },
+    {
+      "host": "careers.sac.gov.in",
+      "items": 0
+    },
+    {
+      "host": "ccras.nic.in",
+      "items": 0
+    },
+    {
+      "host": "dsssb.delhi.gov.in",
+      "items": 0
+    },
+    {
+      "host": "gpsc.gujarat.gov.in",
+      "items": 0
+    },
+    {
+      "host": "mppsc.mp.gov.in",
+      "items": 0
+    },
+    {
+      "host": "nests.tribal.gov.in",
+      "items": 1
+    },
+    {
+      "host": "opportunities.rbi.org.in",
+      "items": 0
+    },
+    {
+      "host": "ppsc.gov.in",
+      "items": 0
+    },
+    {
+      "host": "rbidocs.rbi.org.in",
+      "items": 0
+    },
+    {
+      "host": "rpsc.rajasthan.gov.in",
+      "items": 0
+    },
+    {
+      "host": "rrbcdg.gov.in",
+      "items": 0
+    },
+    {
+      "host": "ssc.gov.in",
+      "items": 1
+    },
+    {
+      "host": "tnpsc.gov.in",
+      "items": 0
+    },
+    {
+      "host": "www.ibps.in",
+      "items": 1
+    },
+    {
+      "host": "www.isro.gov.in",
+      "items": 0
+    },
+    {
+      "host": "www.onlinebssc.com",
+      "items": 0
+    },
+    {
+      "host": "www.rrbapply.gov.in",
+      "items": 1
+    },
+    {
+      "host": "www.upsc.gov.in",
+      "items": 0
+    },
+    {
+      "host": "www.vssc.gov.in",
+      "items": 0
+    }
+  ],
+  "archivedCount": 3,
+  "learning": {
+    "hosts": 0,
+    "slugs": 1,
+    "patterns": {
+      "rrbcdg.gov.in": 1
+    }
+  }
+}

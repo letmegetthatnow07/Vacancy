@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-# api/scrape-jobs.py - Vercel serverless function
+# api/scrape-jobs.py - Vercel serverless scraper function
 
 import json
 import os
+import sys
+import pathlib
 from http.server import BaseHTTPRequestHandler
 from datetime import datetime
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, parse_qs
 import requests
 from bs4 import BeautifulSoup
 
@@ -13,12 +15,16 @@ class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         """Main scraping endpoint called by Vercel cron"""
         
-        # Your existing scraping logic (simplified)
-        pdf_links = self.scrape_and_find_pdfs()
+        # Parse query parameters to detect deep mode
+        query_params = parse_qs(urlparse(self.path).query)
+        is_deep_mode = 'mode' in query_params and query_params['mode'][0] == 'deep'
+        
+        # Your existing scraping logic
+        pdf_links = self.scrape_and_find_pdfs(deep_mode=is_deep_mode)
         
         # Trigger GitHub Actions webhook for OCR
         if pdf_links:
-            self.trigger_ocr_workflow(pdf_links)
+            self.trigger_ocr_workflow(pdf_links, deep_mode=is_deep_mode)
         
         # Return success
         self.send_response(200)
@@ -27,6 +33,7 @@ class handler(BaseHTTPRequestHandler):
         
         response = {
             'ok': True,
+            'mode': 'deep' if is_deep_mode else 'normal',
             'scrapedSources': len(self.sources_tried),
             'pdfsSent': len(pdf_links),
             'timestamp': datetime.utcnow().isoformat()
@@ -34,67 +41,84 @@ class handler(BaseHTTPRequestHandler):
         
         self.wfile.write(json.dumps(response).encode())
     
-    def scrape_and_find_pdfs(self):
+    def scrape_and_find_pdfs(self, deep_mode=False):
         """
         Scrape HTML sources and extract PDF links
-        Returns list of {url, source, title} dicts
+        If deep_mode=True, scrapes more aggressively
         """
         
         pdf_links = []
         self.sources_tried = []
         
-        # Load rules
         try:
-            # In Vercel, read from project root
-            with open('rules.json') as f:
-                rules = json.load(f)
-            hints = rules.get('captureHints', [])
-        except:
-            hints = []
-        
-        # Scrape each hint (official sources only)
-        for hint_url in hints[:20]:  # Limit to avoid timeout
-            try:
-                self.sources_tried.append(hint_url)
-                
-                response = requests.get(
-                    hint_url,
-                    headers={'User-Agent': 'Mozilla/5.0'},
-                    timeout=10
-                )
-                
-                soup = BeautifulSoup(response.content, 'html.parser')
-                
-                # Find PDF links
-                for a in soup.select('a[href*=".pdf"]'):
-                    href = a.get('href')
-                    title = a.get_text(strip=True)
-                    
-                    if not href:
-                        continue
-                    
-                    full_url = href if href.startswith('http') else urljoin(hint_url, href)
-                    
-                    pdf_links.append({
-                        'url': full_url,
-                        'source': urlparse(hint_url).netloc,
-                        'title': title,
-                        'foundAt': hint_url
-                    })
+            import sys
+            sys.path.insert(0, '/var/task')
             
-            except Exception as e:
-                print(f"Scrape failed for {hint_url}: {e}")
-                continue
+            # Load rules
+            rules_path = pathlib.Path('/var/task/rules.json')
+            if rules_path.exists():
+                rules = json.load(open(rules_path))
+            else:
+                rules = {"captureHints": [], "aggregatorScores": {}}
+            
+            hints = rules.get('captureHints', [])
+            
+            # Deep mode: scrape ALL hints, normal mode: limit to 15
+            scrape_limit = len(hints) if deep_mode else min(15, len(hints))
+            
+            # Scrape each hint
+            for hint_url in hints[:scrape_limit]:
+                try:
+                    self.sources_tried.append(hint_url)
+                    
+                    # Deep mode: longer timeout for thorough scraping
+                    timeout = 30 if deep_mode else 10
+                    
+                    response = requests.get(
+                        hint_url,
+                        headers={'User-Agent': 'Mozilla/5.0'},
+                        timeout=timeout
+                    )
+                    
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    
+                    # Find PDF links
+                    for a in soup.select('a[href*=".pdf"]'):
+                        href = a.get('href')
+                        title = a.get_text(strip=True)
+                        
+                        if not href:
+                            continue
+                        
+                        full_url = href if href.startswith('http') else urljoin(hint_url, href)
+                        
+                        pdf_links.append({
+                            'url': full_url,
+                            'source': urlparse(hint_url).netloc,
+                            'title': title,
+                            'foundAt': hint_url,
+                            'deepMode': deep_mode
+                        })
+                
+                except requests.exceptions.Timeout:
+                    print(f"Timeout: {hint_url}")
+                    continue
+                except Exception as e:
+                    print(f"Scrape failed for {hint_url}: {e}")
+                    continue
+        
+        except Exception as e:
+            print(f"Setup failed: {e}")
         
         return pdf_links
     
-    def trigger_ocr_workflow(self, pdf_links):
+    def trigger_ocr_workflow(self, pdf_links, deep_mode=False):
         """
         Send webhook to GitHub Actions to process PDFs
         """
         
         github_token = os.environ.get('GITHUB_TOKEN')
-        github_repo = os.environ.get('GITHUB_REPO')  # format: "username/repo"
+        github_repo = os.environ.get('GITHUB_REPO')
         
         if not github_token or not github_repo:
             print("Warning: GitHub webhook credentials not configured")
@@ -107,6 +131,7 @@ class handler(BaseHTTPRequestHandler):
             'client_payload': {
                 'pdfs': pdf_links,
                 'triggered_by': 'vercel-scraper',
+                'mode': 'deep' if deep_mode else 'normal',
                 'timestamp': datetime.utcnow().isoformat()
             }
         }
@@ -123,7 +148,8 @@ class handler(BaseHTTPRequestHandler):
             )
             
             if response.status_code == 204:
-                print(f"✓ Triggered GitHub OCR workflow with {len(pdf_links)} PDFs")
+                mode_text = "deep" if deep_mode else "normal"
+                print(f"✓ Triggered GitHub {mode_text} OCR workflow with {len(pdf_links)} PDFs")
             else:
                 print(f"Webhook failed: {response.status_code} - {response.text}")
         

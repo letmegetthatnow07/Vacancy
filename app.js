@@ -1,9 +1,9 @@
-// app.js v2025-11-01-vercel-migration-bugfixes
+// app.js v2025-11-01-github-pages-personal-use
 (function(){
   const ENDPOINT = "https://vacancy.animeshkumar97.workers.dev";
   const qs=(s,r)=>(r||document).querySelector(s);
   const qsa=(s,r)=>Array.from((r||document).querySelectorAll(s));
-  const esc=(s)=>(s==null?"":String(s)).replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+  const esc=(s)=>(s==null?"":String(s)).replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"'"}[c]));
   const fmtDate=(s)=>s && s.toUpperCase()!=="N/A" ? s.replaceAll("-", "/") : "N/A";
   const bust=(p)=>p+(p.includes("?")?"&":"?")+"t="+Date.now();
   const toast=(m)=>{const t=qs("#toast"); if(!t) return alert(m); t.textContent=m; t.style.opacity="1"; clearTimeout(t._h); t._h=setTimeout(()=>t.style.opacity="0",1800); };
@@ -66,6 +66,9 @@
           try{ localStorage.setItem("vac_user_votes",JSON.stringify(USER_VOTES)); }catch{}
           
           if (wj.state && typeof wj.state==="object") USER_STATE={...wj.state};
+          
+          // CRITICAL FIX: Sync votes back to server on page load
+          await persistUserStateServer();
           return;
         }
       }
@@ -76,6 +79,9 @@
       const r=await fetch(bust("user_state.json"),{cache:"no-store"}); if(!r.ok) throw 0;
       const remote=await r.json(); if(remote && typeof remote==="object"){ USER_STATE={...remote}; }
     }catch{ USER_STATE={}; }
+    
+    // Always sync on load
+    await persistUserStateServer();
   }
 
   function loadUserStateLocal(){
@@ -97,7 +103,7 @@
       await fetch(ENDPOINT,{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({ type:"user_state_sync", payload:USER_STATE, ts:new Date().toISOString() })
+        body:JSON.stringify({ type:"user_state_sync", payload:USER_STATE, votes:USER_VOTES, ts:new Date().toISOString() })
       });
     }catch(err){
       console.error("KV state sync failed:", err);
@@ -105,11 +111,11 @@
   }
 
   function confirmAction(message="Proceed?"){
-  return new Promise((resolve)=>{
-    const modal=document.createElement("div");
-    modal.className="confirm-modal";
-    modal.innerHTML=`
-      <div class="confirm-modal-overlay">
+    return new Promise((resolve)=>{
+      const modal=document.createElement("div");
+      modal.className="confirm-modal";
+      modal.innerHTML=`
+        <div class="confirm-modal-overlay"></div>
         <div class="confirm-modal-content">
           <h3>Vacancy Dashboard</h3>
           <p>${message}</p>
@@ -118,26 +124,25 @@
             <button class="btn primary confirm-btn">OK</button>
           </div>
         </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-    
-    const cancel=modal.querySelector(".cancel-btn");
-    const confirm_btn=modal.querySelector(".confirm-btn");
-    
-    cancel.onclick=()=>{
-      modal.remove();
-      resolve(false);
-    };
-    
-    confirm_btn.onclick=()=>{
-      modal.remove();
-      resolve(true);
-    };
-    
-    confirm_btn.focus();
-  });
-}
+      `;
+      document.body.appendChild(modal);
+      
+      const cancel=modal.querySelector(".cancel-btn");
+      const confirm_btn=modal.querySelector(".confirm-btn");
+      
+      cancel.onclick=()=>{
+        modal.remove();
+        resolve(false);
+      };
+      
+      confirm_btn.onclick=()=>{
+        modal.remove();
+        resolve(true);
+      };
+      
+      confirm_btn.focus();
+    });
+  }
 
   const trustedChip=()=>' <span class="chip trusted">trusted</span>';
   const topVerify=()=>' <span class="verify-top" title="Verified Right">✓</span>';

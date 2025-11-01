@@ -371,18 +371,27 @@
         }
 
         if(act==="applied"||act==="not_interested"){
-          const ok = await confirmAction(act==="applied" ? "Mark as Applied?" : "Move to Other (Not interested)?");
-          if(!ok) return;
-          const prev=USER_STATE[id]?.action||"";
-          setUserStateLocal(id,act);
-          renderInlineUndo(interestCell, act==="applied"?"applied":"choice",
-            async ()=>{ if(prev){ setUserStateLocal(id,prev); } else { setUserStateLocal(id,"undo"); }
-              await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"state",payload:{jobId:id,action:"undo",ts:new Date().toISOString()}})});
-              await render(); },
-            async ()=>{ await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"state",payload:{jobId:id,action:act,ts:new Date().toISOString()}})});
-              await render(); }, 10);
-          return;
-        }
+  const ok = await confirmAction(act==="applied" ? "Mark as Applied?" : "Move to Other (Not interested)?");
+  if(!ok) return;
+  
+  const prev=USER_STATE[id]?.action||"";
+  setUserStateLocal(id,act);
+  
+  // Get the CURRENT interest cell (may have refreshed)
+  const currentInterestCell = card.querySelector(".row2 .interest");
+  
+  renderInlineUndo(currentInterestCell, act==="applied"?"applied":"choice",
+    async ()=>{ 
+      if(prev){ setUserStateLocal(id,prev); } else { setUserStateLocal(id,"undo"); }
+      await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"state",payload:{jobId:id,action:"undo",ts:new Date().toISOString()}})});
+      await render(); 
+    },
+    async ()=>{ 
+      await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"state",payload:{jobId:id,action:act,ts:new Date().toISOString()}})});
+      await render(); 
+    }, 10);
+  return;
+}
 
         if(act==="exam_done"){
           const prev = USER_STATE[id]?.action || "";

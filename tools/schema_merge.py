@@ -215,7 +215,10 @@ if __name__ == "__main__":
                 except:
                     pass
     
-    merged, added = merge(existing, cands, applied_ids, other_ids)
+    # Get applied/other IDs from data structure
+applied_ids = set(data.get("sections", {}).get("applied", []))
+other_ids = set(data.get("sections", {}).get("other", []))
+merged, added = merge(existing, cands, applied_ids, other_ids)
     data["jobListings"] = merged
     data.setdefault("archivedListings", data.get("archivedListings") or [])
     data.setdefault("sections", data.get("sections") or {"applied":[],"other":[],"primary":[]})

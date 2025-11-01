@@ -1,0 +1,9 @@
+{
+  "jobListings": [],
+  "archivedListings": [],
+  "transparencyInfo": {
+    "ocrProcessed": 0,
+    "ocrAdded": 0,
+    "lastOcrRun": "{{ github.event.repository.updated_at }}"
+  }
+}

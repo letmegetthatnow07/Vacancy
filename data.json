@@ -1,104 +1,5 @@
 {
-  "jobListings": [
-    {
-      "id": "user_252886962",
-      "title": "RRB Section Controller Recruitment 2025",
-      "qualificationLevel": "Any graduate",
-      "domicile": "All India",
-      "deadline": "14/10/2025",
-      "applyLink": "https://www.rrbapply.gov.in/assets/forms/cen_04_2025_section_controller_cen_08_09_2025.pdf",
-      "detailLink": "https://www.rrbapply.gov.in/assets/forms/cen_04_2025_section_controller_cen_08_09_2025.pdf",
-      "source": "official",
-      "type": "VACANCY",
-      "flags": {
-        "added_from_missing": true,
-        "trusted": true
-      },
-      "daysLeft": 10
-    },
-    {
-      "id": "user_458123037",
-      "title": "BSSC CGL Recruitment 2025",
-      "qualificationLevel": "Any graduate",
-      "domicile": "All India",
-      "deadline": "16/10/2025",
-      "applyLink": "https://bssc.bihar.gov.in/advertisement/0525_advt.pdf",
-      "detailLink": "https://bssc.bihar.gov.in/advertisement/0525_advt.pdf",
-      "source": "official",
-      "type": "VACANCY",
-      "flags": {
-        "added_from_missing": true,
-        "trusted": true
-      },
-      "numberOfPosts": 1481,
-      "daysLeft": 12
-    },
-    {
-      "id": "user_410475533",
-      "title": "SSC Delhi Police Recruitment 2025",
-      "qualificationLevel": "Any graduate",
-      "domicile": "All India",
-      "deadline": "21-10-2025",
-      "applyLink": "https://ssc.gov.in/api/attachment/uploads/masterdata/noticeboards/notice_of_dpce_2025.pdf",
-      "detailLink": "https://ssc.gov.in/api/attachment/uploads/masterdata/noticeboards/notice_of_dpce_2025.pdf",
-      "source": "official",
-      "type": "VACANCY",
-      "flags": {
-        "added_from_missing": true,
-        "trusted": true
-      },
-      "daysLeft": 17
-    },
-    {
-      "id": "user_558110832",
-      "title": "EMRS Non Teaching Various Post Recruitment 2025",
-      "qualificationLevel": "Any graduate",
-      "domicile": "All India",
-      "deadline": "23/10/2025",
-      "applyLink": "https://nests.tribal.gov.in/writereaddata/rtf1984/1758273371.pdf",
-      "detailLink": "https://nests.tribal.gov.in/writereaddata/rtf1984/1758273371.pdf",
-      "source": "official",
-      "type": "VACANCY",
-      "flags": {
-        "added_from_missing": true,
-        "trusted": true
-      },
-      "daysLeft": 19
-    },
-    {
-      "id": "user_323617546",
-      "title": "BSSC Office Attendant Recruitment 2025",
-      "qualificationLevel": "Any graduate",
-      "domicile": "All India",
-      "deadline": "14/10/2025",
-      "applyLink": "https://bssc.bihar.gov.in/advertisement/0625_advt.pdf",
-      "detailLink": "https://bssc.bihar.gov.in/advertisement/0625_advt.pdf",
-      "source": "official",
-      "type": "VACANCY",
-      "flags": {
-        "added_from_missing": true,
-        "trusted": true
-      },
-      "numberOfPosts": 3727,
-      "daysLeft": 10
-    },
-    {
-      "id": "user_673463783",
-      "title": "IBPS RRB 14th Recruitment 2025",
-      "qualificationLevel": "Any graduate",
-      "domicile": "All India",
-      "deadline": "28/09/2025",
-      "applyLink": "https://www.ibps.in/wp-content/uploads/crp-rrbs-xiv_final_ad_31.08.25.pdf",
-      "detailLink": "https://www.ibps.in/wp-content/uploads/crp-rrbs-xiv_final_ad_31.08.25.pdf",
-      "source": "official",
-      "type": "VACANCY",
-      "flags": {
-        "added_from_missing": true,
-        "trusted": true
-      },
-      "daysLeft": -6
-    }
-  ],
+  "jobListings": [],
   "archivedListings": [
     {
       "id": "user_323617546",
@@ -153,27 +54,129 @@
         "auto_archived": "expired_7d"
       },
       "daysLeft": -8
+    },
+    {
+      "id": "user_317281602",
+      "title": "IBPS RRB 14th Recruitment 2025",
+      "qualificationLevel": "Any graduate",
+      "domicile": "All India",
+      "deadline": "28/09/2025",
+      "applyLink": "https://www.ibps.in/wp-content/uploads/crp-rrbs-xiv_final_ad_31.08.25.pdf",
+      "detailLink": "https://www.ibps.in/wp-content/uploads/crp-rrbs-xiv_final_ad_31.08.25.pdf",
+      "source": "official",
+      "type": "VACANCY",
+      "flags": {
+        "added_from_missing": true,
+        "trusted": true,
+        "removed_reason": "auto_archived_expired_7d",
+        "auto_archived": "expired_7d"
+      },
+      "daysLeft": -34
+    },
+    {
+      "id": "user_435729894",
+      "title": "BSSC Office Attendant Recruitment 2025",
+      "qualificationLevel": "Any graduate",
+      "domicile": "All India",
+      "deadline": "14/10/2025",
+      "applyLink": "https://bssc.bihar.gov.in/advertisement/0625_advt.pdf",
+      "detailLink": "https://bssc.bihar.gov.in/advertisement/0625_advt.pdf",
+      "source": "official",
+      "type": "VACANCY",
+      "flags": {
+        "added_from_missing": true,
+        "trusted": true,
+        "removed_reason": "auto_archived_expired_7d",
+        "auto_archived": "expired_7d"
+      },
+      "numberOfPosts": 3727,
+      "daysLeft": -18
+    },
+    {
+      "id": "user_961511141",
+      "title": "RRB Section Controller Recruitment 2025",
+      "qualificationLevel": "Any graduate",
+      "domicile": "All India",
+      "deadline": "14/10/2025",
+      "applyLink": "https://www.rrbapply.gov.in/assets/forms/cen_04_2025_section_controller_cen_08_09_2025.pdf",
+      "detailLink": "https://www.rrbapply.gov.in/assets/forms/cen_04_2025_section_controller_cen_08_09_2025.pdf",
+      "source": "official",
+      "type": "VACANCY",
+      "flags": {
+        "added_from_missing": true,
+        "trusted": true,
+        "removed_reason": "auto_archived_expired_7d",
+        "auto_archived": "expired_7d"
+      },
+      "daysLeft": -18
+    },
+    {
+      "id": "user_310512045",
+      "title": "BSSC CGL Recruitment 2025",
+      "qualificationLevel": "Any graduate",
+      "domicile": "All India",
+      "deadline": "16/10/2025",
+      "applyLink": "https://bssc.bihar.gov.in/advertisement/0525_advt.pdf",
+      "detailLink": "https://bssc.bihar.gov.in/advertisement/0525_advt.pdf",
+      "source": "official",
+      "type": "VACANCY",
+      "flags": {
+        "added_from_missing": true,
+        "trusted": true,
+        "removed_reason": "auto_archived_expired_7d",
+        "auto_archived": "expired_7d"
+      },
+      "numberOfPosts": 1481,
+      "daysLeft": -16
+    },
+    {
+      "id": "user_343856155",
+      "title": "EMRS Non Teaching Various Post Recruitment 2025",
+      "qualificationLevel": "Any graduate",
+      "domicile": "All India",
+      "deadline": "23/10/2025",
+      "applyLink": "https://nests.tribal.gov.in/writereaddata/rtf1984/1758273371.pdf",
+      "detailLink": "https://nests.tribal.gov.in/writereaddata/rtf1984/1758273371.pdf",
+      "source": "official",
+      "type": "VACANCY",
+      "flags": {
+        "added_from_missing": true,
+        "trusted": true,
+        "removed_reason": "auto_archived_expired_7d",
+        "auto_archived": "expired_7d"
+      },
+      "daysLeft": -9
+    },
+    {
+      "id": "user_838075677",
+      "title": "SSC Delhi Police Recruitment 2025",
+      "qualificationLevel": "Any graduate",
+      "domicile": "All India",
+      "deadline": "21-10-2025",
+      "applyLink": "https://ssc.gov.in/api/attachment/uploads/masterdata/noticeboards/notice_of_dpce_2025.pdf",
+      "detailLink": "https://ssc.gov.in/api/attachment/uploads/masterdata/noticeboards/notice_of_dpce_2025.pdf",
+      "source": "official",
+      "type": "VACANCY",
+      "flags": {
+        "added_from_missing": true,
+        "trusted": true,
+        "removed_reason": "auto_archived_expired_7d",
+        "auto_archived": "expired_7d"
+      },
+      "daysLeft": -11
     }
   ],
   "sections": {
     "applied": [],
-    "other": [
-      "user_673463783"
-    ],
-    "primary": [
-      "user_252886962",
-      "user_458123037",
-      "user_410475533",
-      "user_558110832",
-      "user_323617546"
-    ]
+    "other": [],
+    "primary": []
   },
   "transparencyInfo": {
-    "schemaVersion": "1.7",
-    "runMode": "nightly",
-    "totalListings": 6,
+    "schemaVersion": "1.9",
+    "runMode": "normal",
+    "totalListings": 0,
     "sourcesTried": [],
-    "lastUpdated": "2025-10-04T13:32:00.668937Z",
+    "lastUpdated": "2025-11-01T14:34:46.915905Z",
     "mergedUpdates": 0,
     "sourcesByStatus": [
       {
@@ -186,7 +189,7 @@
       },
       {
         "host": "bssc.bihar.gov.in",
-        "items": 2
+        "items": 0
       },
       {
         "host": "careers.sac.gov.in",
@@ -210,7 +213,7 @@
       },
       {
         "host": "nests.tribal.gov.in",
-        "items": 1
+        "items": 0
       },
       {
         "host": "opportunities.rbi.org.in",
@@ -234,7 +237,7 @@
       },
       {
         "host": "ssc.gov.in",
-        "items": 1
+        "items": 0
       },
       {
         "host": "tnpsc.gov.in",
@@ -242,7 +245,7 @@
       },
       {
         "host": "www.ibps.in",
-        "items": 1
+        "items": 0
       },
       {
         "host": "www.isro.gov.in",
@@ -254,7 +257,7 @@
       },
       {
         "host": "www.rrbapply.gov.in",
-        "items": 1
+        "items": 0
       },
       {
         "host": "www.upsc.gov.in",
@@ -265,13 +268,15 @@
         "items": 0
       }
     ],
-    "archivedCount": 3,
+    "archivedCount": 9,
     "learning": {
       "hosts": 0,
-      "slugs": 1,
-      "patterns": {
-        "rrbcdg.gov.in": 1
-      }
-    }
+      "slugs": 0,
+      "patterns": {}
+    },
+    "appliedPreserved": 0,
+    "appliedCount": 0,
+    "rejectedHindi": 0,
+    "rejectedIneligible": 0
   }
 }

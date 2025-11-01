@@ -1,8 +1,8 @@
 {
   "ok": true,
-  "totalListings": 8,
-  "archivedCount": 25,
-  "lastUpdated": "2025-11-01T13:42:01.790202Z",
+  "totalListings": 0,
+  "archivedCount": 9,
+  "lastUpdated": "2025-11-01T14:34:46.915905Z",
   "source": "github-actions-ocr",
   "schemaVersion": "1.9",
   "runMode": "normal",
@@ -103,5 +103,8 @@
     "slugs": 0,
     "patterns": {}
   },
-  "appliedCount": 0
+  "appliedPreserved": 0,
+  "appliedCount": 0,
+  "rejectedHindi": 0,
+  "rejectedIneligible": 0
 }

@@ -13,6 +13,10 @@
     {
       "path": "/api/scrape-jobs",
       "schedule": "30 13 * * *"
+    },
+    {
+      "path": "/api/scrape-jobs?mode=deep",
+      "schedule": "0 2 * * 0"
     }
   ],
   "github": {

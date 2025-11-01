@@ -104,7 +104,40 @@
     }
   }
 
-  function confirmAction(message="Proceed?"){ return Promise.resolve(confirm(message)); }
+  function confirmAction(message="Proceed?"){
+  return new Promise((resolve)=>{
+    const modal=document.createElement("div");
+    modal.className="confirm-modal";
+    modal.innerHTML=`
+      <div class="confirm-modal-overlay">
+        <div class="confirm-modal-content">
+          <h3>Vacancy Dashboard</h3>
+          <p>${message}</p>
+          <div class="confirm-modal-buttons">
+            <button class="btn ghost cancel-btn">Cancel</button>
+            <button class="btn primary confirm-btn">OK</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    
+    const cancel=modal.querySelector(".cancel-btn");
+    const confirm_btn=modal.querySelector(".confirm-btn");
+    
+    cancel.onclick=()=>{
+      modal.remove();
+      resolve(false);
+    };
+    
+    confirm_btn.onclick=()=>{
+      modal.remove();
+      resolve(true);
+    };
+    
+    confirm_btn.focus();
+  });
+}
 
   const trustedChip=()=>' <span class="chip trusted">trusted</span>';
   const topVerify=()=>' <span class="verify-top" title="Verified Right">✓</span>';

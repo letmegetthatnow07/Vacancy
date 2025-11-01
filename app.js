@@ -1,6 +1,6 @@
 // app.js v2025-11-01-vercel-migration-bugfixes
 (function(){
-  const ENDPOINT = "https://vacancy.animeshkumar97.workers.dev";  // Your Cloudflare Worker URL
+  const ENDPOINT = "https://vacancy.animeshkumar97.workers.dev";
   const qs=(s,r)=>(r||document).querySelector(s);
   const qsa=(s,r)=>Array.from((r||document).querySelectorAll(s));
   const esc=(s)=>(s==null?"":String(s)).replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
@@ -37,8 +37,6 @@
   });
 
   let USER_STATE={}, USER_VOTES={};
-  
-  // BUG FIX #2: Global timer tracking to prevent memory leaks
   const ACTIVE_TIMERS = new Map();
 
   async function loadUserStateServer(){
@@ -47,7 +45,6 @@
       if(wr.ok){
         const wj=await wr.json();
         if(wj && wj.ok){
-          // BUG FIX #1: Merge server votes with local votes (prefer newer timestamp)
           const serverVotes = (wj.votes && typeof wj.votes==="object") ? wj.votes : {};
           const localVotes = JSON.parse(localStorage.getItem("vac_user_votes")||"{}");
           
@@ -61,16 +58,13 @@
             if(!loc) { USER_VOTES[jid] = srv; continue; }
             if(!srv) { USER_VOTES[jid] = loc; continue; }
             
-            // Both exist: compare timestamps
             const srvTs = new Date(srv.ts || 0).getTime();
             const locTs = new Date(loc.ts || 0).getTime();
             USER_VOTES[jid] = (locTs >= srvTs) ? loc : srv;
           }
           
-          // Save merged result back to localStorage
           try{ localStorage.setItem("vac_user_votes",JSON.stringify(USER_VOTES)); }catch{}
           
-          // Load state normally
           if (wj.state && typeof wj.state==="object") USER_STATE={...wj.state};
           return;
         }
@@ -116,13 +110,11 @@
   const topVerify=()=>' <span class="verify-top" title="Verified Right">✓</span>';
   const corroboratedChip=()=>' <span class="chip" title="Multiple sources">x2</span>';
 
-  // BUG FIX #2: Enhanced undo timer with proper cleanup
   function renderInlineUndo(slot, label, onUndo, onCommit, seconds=10){
     if(!slot) return;
     
     const cardId = slot.closest("[data-id]")?.getAttribute("data-id");
     
-    // Clear any existing timer for this card
     if(cardId && ACTIVE_TIMERS.has(cardId)){
       clearInterval(ACTIVE_TIMERS.get(cardId));
       ACTIVE_TIMERS.delete(cardId);
@@ -354,14 +346,12 @@
           return;
         }
 
-        // BUG FIX #3: Exam done now has undo timer and proper persistence
         if(act==="exam_done"){
           const prev = USER_STATE[id]?.action || "";
           setUserStateLocal(id, "exam_done");
           
           renderInlineUndo(interestCell, "exam done",
             async ()=> {
-              // Undo: restore previous state
               if(prev){ setUserStateLocal(id, prev); } 
               else { setUserStateLocal(id, "undo"); }
               
@@ -376,7 +366,6 @@
               await render();
             },
             async ()=> {
-              // Commit: persist to server
               await fetch(ENDPOINT,{
                 method:"POST",
                 headers:{"Content-Type":"application/json"},
@@ -386,7 +375,7 @@
                 })
               });
               toast("Exam done marked - will auto-remove after 7 days");
-              await render(); // Re-render to show persisted state
+              await render();
             }, 10);
           return;
         }

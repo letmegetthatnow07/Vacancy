@@ -89,37 +89,33 @@ def parse_date_any(s):
         except: pass
     return None
 
-# NEW: Check eligibility (user criteria: Bihar/All India, 12th+)
+# NEW: Check eligibility - Filter only legitimate garbage
 def check_eligibility(job):
     """
-    Check if job matches user eligibility criteria
-    User: Bihar/All India, 12th pass+
+    Check if job is legitimate
+    Remove: Checks 4 & 5 (missing data OK, you can add manually)
+    Keep: Checks 1 & 3 (Hindi garbage, wrong domicile)
+    Optional: Check 2 (very short titles are likely garbage)
     """
     title = job.get('title', '')
     domicile = (job.get('domicile', '') or 'N/A').upper()
-    qualification = (job.get('qualificationLevel', '') or 'N/A').upper()
     
-    # Check 1: Title not corrupted (Hindi)
+    # Check 1: Title not corrupted (Hindi) - KEEP ✅
     non_ascii = sum(1 for c in title if ord(c) > 127) / max(len(title), 1)
     if non_ascii > 0.3:
         return False, "Hindi_title"
     
-    # Check 2: Valid title
+    # Check 2: Valid title (optional - removes obvious garbage) - OPTIONAL ⚠️
+    # If a title is VERY short (<5 chars), it's likely corrupted
     if not title or len(title) < 5:
         return False, "Invalid_title"
     
-    # Check 3: Domicile match
+    # Check 3: Domicile match - KEEP ✅
     if 'BIHAR' not in domicile and 'ALL' not in domicile:
         return False, f"Domicile_{domicile}"
     
-    # Check 4: Qualification must be specified (not N/A)
-    if 'N/A' in qualification or not qualification.strip():
-        return False, "No_qualification"
-    
-    # Check 5: Must have deadline
-    deadline = job.get('deadline', '')
-    if not deadline or 'N/A' in deadline:
-        return False, "No_deadline"
+    # REMOVED: Check 4 (qualification) - REMOVED ✅
+    # REMOVED: Check 5 (deadline) - REMOVED ✅
     
     return True, "Eligible"
 

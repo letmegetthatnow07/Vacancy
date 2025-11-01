@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# qc_and_learn.py v2025-10-04-final-dedup-fix
+# qc_and_learn.py v2025-11-01-eligibility-filter
 
 import json, pathlib, re, argparse, urllib.parse
 from datetime import datetime, timedelta, date
@@ -88,6 +88,40 @@ def parse_date_any(s):
         try: return datetime.strptime(s,f).date()
         except: pass
     return None
+
+# NEW: Check eligibility (user criteria: Bihar/All India, 12th+)
+def check_eligibility(job):
+    """
+    Check if job matches user eligibility criteria
+    User: Bihar/All India, 12th pass+
+    """
+    title = job.get('title', '')
+    domicile = (job.get('domicile', '') or 'N/A').upper()
+    qualification = (job.get('qualificationLevel', '') or 'N/A').upper()
+    
+    # Check 1: Title not corrupted (Hindi)
+    non_ascii = sum(1 for c in title if ord(c) > 127) / max(len(title), 1)
+    if non_ascii > 0.3:
+        return False, "Hindi_title"
+    
+    # Check 2: Valid title
+    if not title or len(title) < 5:
+        return False, "Invalid_title"
+    
+    # Check 3: Domicile match
+    if 'BIHAR' not in domicile and 'ALL' not in domicile:
+        return False, f"Domicile_{domicile}"
+    
+    # Check 4: Qualification must be specified (not N/A)
+    if 'N/A' in qualification or not qualification.strip():
+        return False, "No_qualification"
+    
+    # Check 5: Must have deadline
+    deadline = job.get('deadline', '')
+    if not deadline or 'N/A' in deadline:
+        return False, "No_deadline"
+    
+    return True, "Eligible"
 
 UPD_TOK = [
     "corrigendum","extension","extended","addendum","amendment","revised","rectified",
@@ -297,6 +331,7 @@ def keep_date(j):
     return None
 
 primary=[]; other=[]; applied_ids=[]; today=date.today()
+rejected_hindi=0; rejected_ineligible=0
 
 # Build applied_ids from user_state.json
 for jid, state_rec in user_state.items():
@@ -319,6 +354,18 @@ for jid, state_rec in user_state.items():
 for j in jobs:
     jid = j["id"]
     h=host(j.get("applyLink"))
+
+    # NEW: Check eligibility BEFORE processing
+    is_eligible, reason = check_eligibility(j)
+    if not is_eligible:
+        if "Hindi" in reason:
+            rejected_hindi += 1
+        else:
+            rejected_ineligible += 1
+        j.setdefault("flags",{})["removed_reason"] = f"auto_filtered_{reason}"
+        j.setdefault("flags",{})["auto_filtered"] = reason
+        archived.append(j)
+        continue
 
     if matches_non_vacancy_pattern(h, j.get("title",""), j.get("applyLink","")):
         if not (j.get("numberOfPosts") and parse_date_any(j.get("deadline"))):
@@ -402,6 +449,8 @@ transp.update({
     "sourcesByStatus": sources_status,
     "archivedCount": len(archived),
     "appliedCount": len(applied_ids),
+    "rejectedHindi": rejected_hindi,
+    "rejectedIneligible": rejected_ineligible,
     "learning": {
         "hosts": len(learn.get("byHost") or {}),
         "slugs": len(learn.get("bySlug") or {}),
@@ -425,4 +474,4 @@ JWRITE("rules.json", rules)
 JWRITE("learn_registry.json", learn)
 JWRITE("learn.json", {"generatedAt": datetime.utcnow().isoformat()+"Z","runMode": RUN_MODE})
 JWRITE("health.json", {"ok": True, **transp})
-print(f"✓ QC and Learn complete: {len(primary)+len(other)} active ({len(applied_ids)} applied), {len(archived)} archived, mode={RUN_MODE}")
+print(f"✓ QC and Learn complete: {len(primary)+len(other)} active ({len(applied_ids)} applied), {len(archived)} archived (hindi:{rejected_hindi}, ineligible:{rejected_ineligible}), mode={RUN_MODE}")

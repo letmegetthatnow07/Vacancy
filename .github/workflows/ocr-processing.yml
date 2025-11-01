@@ -1,0 +1,171 @@
+name: OCR Processing Only
+
+on:
+  # Webhook trigger from Vercel
+  repository_dispatch:
+    types: [process-pdfs]
+  
+  # Manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      pdf_urls:
+        description: 'JSON array of PDF URLs'
+        required: true
+        default: '[]'
+
+permissions:
+  contents: write
+
+jobs:
+  ocr-process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install OCR dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr tesseract-ocr-hin poppler-utils
+          pip install PyPDF2 pdfplumber pdf2image pytesseract pillow requests
+
+      - name: Parse webhook payload
+        id: payload
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo '${{ toJson(github.event.client_payload.pdfs) }}' > pdfs.json
+          else
+            echo '${{ inputs.pdf_urls }}' > pdfs.json
+          fi
+          cat pdfs.json
+
+      - name: Download and process PDFs
+        run: |
+          python3 << 'PYTHON_SCRIPT'
+          import json, requests, subprocess, sys
+          from pathlib import Path
+          
+          pdfs_data = json.load(open('pdfs.json'))
+          results = []
+          
+          for pdf_info in pdfs_data:
+              url = pdf_info.get('url')
+              source = pdf_info.get('source', 'unknown')
+              
+              if not url:
+                  continue
+              
+              # Download PDF
+              filename = f".cache/{Path(url).name}"
+              Path(".cache").mkdir(exist_ok=True)
+              
+              try:
+                  r = requests.get(url, timeout=30)
+                  r.raise_for_status()
+                  Path(filename).write_bytes(r.content)
+                  print(f"Downloaded: {filename}")
+              except Exception as e:
+                  print(f"Download failed: {url} - {e}")
+                  continue
+              
+              # Run OCR parser
+              try:
+                  result = subprocess.run(
+                      ['python', 'tools/pdf_parser.py', filename, '--source', source],
+                      capture_output=True,
+                      text=True,
+                      timeout=120
+                  )
+                  
+                  if result.returncode == 0:
+                      # Parser outputs JSONL to stdout
+                      for line in result.stdout.strip().split('\n'):
+                          if line.strip():
+                              results.append(json.loads(line))
+                  else:
+                      print(f"OCR failed: {filename} - {result.stderr}")
+              
+              except Exception as e:
+                  print(f"Processing error: {filename} - {e}")
+          
+          # Write results
+          Path('tmp').mkdir(exist_ok=True)
+          with open('tmp/ocr_results.jsonl', 'w') as f:
+              for job in results:
+                  f.write(json.dumps(job, ensure_ascii=False) + '\n')
+          
+          print(f"\n✓ Processed {len(results)} jobs from {len(pdfs_data)} PDFs")
+          PYTHON_SCRIPT
+
+      - name: Merge OCR results into data.json
+        run: |
+          python3 << 'PYTHON_SCRIPT'
+          import json
+          from pathlib import Path
+          
+          # Load existing data
+          try:
+              data = json.load(open('data.json'))
+          except:
+              data = {'jobListings': [], 'archivedListings': []}
+          
+          # Load OCR results
+          ocr_jobs = []
+          if Path('tmp/ocr_results.jsonl').exists():
+              with open('tmp/ocr_results.jsonl') as f:
+                  for line in f:
+                      if line.strip():
+                          ocr_jobs.append(json.loads(line))
+          
+          # Merge by ID (avoid duplicates)
+          existing_ids = {j['id'] for j in data['jobListings']}
+          new_jobs = [j for j in ocr_jobs if j['id'] not in existing_ids]
+          
+          data['jobListings'].extend(new_jobs)
+          
+          # Update transparency
+          data.setdefault('transparencyInfo', {})
+          data['transparencyInfo']['ocrProcessed'] = len(ocr_jobs)
+          data['transparencyInfo']['ocrAdded'] = len(new_jobs)
+          data['transparencyInfo']['lastOcrRun'] = '{{ github.event.repository.updated_at }}'
+          
+          # Write atomically
+          with open('data.json', 'w', encoding='utf-8') as f:
+              json.dump(data, f, indent=2, ensure_ascii=False)
+          
+          print(f"✓ Merged {len(new_jobs)} new OCR jobs into data.json")
+          PYTHON_SCRIPT
+
+      - name: Commit results
+        run: |
+          git config user.name "OCR Bot"
+          git config user.email "ocr-bot@users.noreply.github.com"
+          
+          git add data.json
+          
+          if git diff --cached --quiet; then
+            echo "✓ No new OCR data to commit"
+          else
+            git commit -m "chore: OCR processing complete" \
+              -m "Processed PDFs from Vercel scraper"
+            git push
+          fi
+
+      - name: Trigger Vercel rebuild
+        env:
+          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          if [ -n "$VERCEL_DEPLOY_HOOK" ]; then
+            curl -X POST "$VERCEL_DEPLOY_HOOK"
+            echo "✓ Triggered Vercel redeployment"
+          fi

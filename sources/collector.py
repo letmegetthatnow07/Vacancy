@@ -21,7 +21,18 @@ OFFICIAL_SITES = [
     ("https://www.isro.gov.in/Careers.html", "a[href]", "ISRO", "All India"),
     ("https://www.vssc.gov.in/careers.html", "a[href]", "ISRO/VSSC", "All India"),
     ("https://apps.ursc.gov.in/", "a[href]", "ISRO/URSC", "All India"),
-    ("https://careers.sac.gov.in/", "a[href]", "ISRO/SAC", "All India")
+    ("https://careers.sac.gov.in/", "a[href]", "ISRO/SAC", "All India"),
+    # NEW: Major Indian Government Recruitment Sites
+    ("https://www.onlinebssc.com/", "a[href]", "BSSC", "Bihar"),
+    ("https://www.rrbapply.gov.in/#/auth/landing", "a[href]", "RRB", "All India"),
+    ("https://nests.tribal.gov.in/show_content.php?lang=1&level=1&ls_id=949&lid=550", "a[href]", "EMRS/ESSE", "All India"),
+    ("https://dda.gov.in/latest-jobs", "a[href]", "DDA", "Delhi"),
+    ("https://dda.gov.in/", "a[href]", "DDA", "Delhi"),
+    ("https://www.mha.gov.in/en/notifications/vacancies", "a[href]", "MHA", "All India"),
+    ("https://www.westbengalssc.com/otr/recruitment/", "a[href]", "West Bengal SSC", "West Bengal"),
+    ("https://www.csir.res.in/en/notification", "a[href]", "CSIR", "All India"),
+    ("https://uppsc.up.nic.in/CandidatePages/Notifications.aspx", "a[href]", "UPPSC", "Uttar Pradesh"),
+    ("https://www.upsc.gov.in/", "a[href]", "UPSC", "All India"),
 ]
 
 AGGREGATORS = [
@@ -79,7 +90,7 @@ def collect():
             if BLOCK.search(it["title"]) and not ALLOW_UPDATE.search(it["title"]): continue
             rec={
                 "title":it["title"], "applyLink":it["url"], "detailLink":it["url"],
-                "source":"official","domicile":"All India","type":"UPDATE" if ALLOW_UPDATE.search(it["title"]) else "VACANCY",
+                "source":"official","domicile":dom,"type":"UPDATE" if ALLOW_UPDATE.search(it["title"]) else "VACANCY",
                 "qualificationLevel":"Any graduate"
             }
             p=posts_from_text(it["title"]); 

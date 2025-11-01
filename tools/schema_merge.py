@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # schema_merge.py — promote numberOfPosts reliably and normalize to int
+# PLUS: Preserve applied/other jobs, filter eligibility
 import json, sys, re, hashlib
 from datetime import datetime
 
-def norm_spaces(s): return re.sub(r"\s+"," ", (s or "").strip())
+def norm_spaces(s): 
+    return re.sub(r"\s+"," ", (s or "").strip())
 
 def fuzzy_title(s):
     s = (s or "").lower()
@@ -53,6 +55,39 @@ def to_int(n):
     if isinstance(n,str) and n.strip().isdigit(): return int(n.strip())
     return None
 
+def check_eligibility(job):
+    """
+    CRITICAL: Check if job matches user eligibility
+    User: Bihar/All India, 12th+ pass, reasonable vacancy
+    """
+    title = job.get('title', '')
+    domicile = (job.get('domicile', '') or 'N/A').upper()
+    qualification = (job.get('qualificationLevel', '') or 'N/A').upper()
+    
+    # Check 1: Title must be English (not Hindi)
+    non_ascii = sum(1 for c in title if ord(c) > 127) / max(len(title), 1)
+    if non_ascii > 0.3:
+        return False, "Hindi title detected"
+    
+    # Check 2: Must have valid title
+    if not title or len(title) < 5:
+        return False, "Invalid title"
+    
+    # Check 3: Domicile must match
+    if 'BIHAR' not in domicile and 'ALL' not in domicile:
+        return False, f"Domicile mismatch: {domicile}"
+    
+    # Check 4: Qualification must be specified
+    if 'N/A' in qualification or not qualification.strip():
+        return False, "No qualification specified"
+    
+    # Check 5: Must have deadline
+    deadline = job.get('deadline', '')
+    if not deadline or 'N/A' in deadline:
+        return False, "No deadline"
+    
+    return True, "Eligible"
+
 def validate(i):
     out = {
         "id": i.get("id") or ("src_" + make_key(i)),
@@ -72,13 +107,44 @@ def validate(i):
     if dl is not None: out["daysLeft"] = dl
     return out
 
-def merge(existing, candidates):
+def merge(existing, candidates, applied_ids, other_ids):
+    """
+    Merge candidates into existing, preserving applied & other jobs
+    
+    Priority:
+    1. Keep all applied jobs (SACRED)
+    2. Keep all other jobs (user marked)
+    3. Merge new candidates (dedup, enrich)
+    """
+    
     idx = { make_key(x): x for x in existing }
+    
+    # Preserve applied and other jobs
+    preserved_applied = [j for j in existing if j.get('id') in applied_ids]
+    preserved_other = [j for j in existing if j.get('id') in other_ids]
+    
+    print(f"✓ Preserving {len(preserved_applied)} applied jobs")
+    print(f"✓ Preserving {len(preserved_other)} other jobs")
+    
     added = 0
+    rejected_hindi = 0
+    rejected_ineligible = 0
+    
     for raw in candidates:
         v = validate(raw)
         k = make_key(v)
+        
+        # Check eligibility BEFORE adding
+        is_eligible, reason = check_eligibility(v)
+        if not is_eligible:
+            if "Hindi" in reason:
+                rejected_hindi += 1
+            else:
+                rejected_ineligible += 1
+            continue
+        
         if k in idx:
+            # Merge into existing
             ex = idx[k]
             for f in ["qualificationLevel","domicile","deadline","applyLink","detailLink","source","type"]:
                 if v.get(f) and (not ex.get(f) or ex.get(f)=="N/A"):
@@ -88,7 +154,32 @@ def merge(existing, candidates):
             ex["flags"] = { **(ex.get("flags") or {}), **(v.get("flags") or {}) }
             if v.get("daysLeft") is not None: ex["daysLeft"] = v["daysLeft"]
         else:
-            existing.append(v); idx[k]=v; added += 1
+            # Add new job
+            existing.append(v)
+            idx[k]=v
+            added += 1
+    
+    # Add back preserved jobs (overwrite any duplicates with preserved versions)
+    for job in preserved_applied:
+        k = make_key(job)
+        existing_job = idx.get(k)
+        if existing_job:
+            # Preserve original user data
+            idx[k] = job
+        else:
+            existing.append(job)
+            idx[k] = job
+    
+    for job in preserved_other:
+        k = make_key(job)
+        existing_job = idx.get(k)
+        if existing_job:
+            idx[k] = job
+        else:
+            existing.append(job)
+            idx[k] = job
+    
+    # Sort by deadline
     def sort_key(it):
         dd = it.get("deadline","N/A")
         try:
@@ -97,6 +188,11 @@ def merge(existing, candidates):
         except Exception:
             return (1, datetime.max, it.get("title",""))
     existing.sort(key=sort_key)
+    
+    print(f"\n✓ Added {added} new eligible jobs")
+    print(f"⊘ Rejected {rejected_hindi} Hindi titles")
+    print(f"⊘ Rejected {rejected_ineligible} ineligible jobs")
+    
     return existing, added
 
 if __name__ == "__main__":
@@ -106,12 +202,25 @@ if __name__ == "__main__":
     data_path, cand_path, out_path = sys.argv[1], sys.argv[2], sys.argv[3]
     data = json.load(open(data_path,"r",encoding="utf-8"))
     existing = data.get("jobListings") or []
-    cands = [json.loads(line) for line in open(cand_path,"r",encoding="utf-8") if line.strip()]
-    merged, added = merge(existing, cands)
+    sections = data.get("sections") or {"applied":[],"other":[]}
+    applied_ids = set(sections.get("applied", []))
+    other_ids = set(sections.get("other", []))
+    
+    cands = []
+    if open(cand_path).readable():
+        for line in open(cand_path,"r",encoding="utf-8"):
+            if line.strip():
+                try:
+                    cands.append(json.loads(line))
+                except:
+                    pass
+    
+    merged, added = merge(existing, cands, applied_ids, other_ids)
     data["jobListings"] = merged
     data.setdefault("archivedListings", data.get("archivedListings") or [])
     data.setdefault("sections", data.get("sections") or {"applied":[],"other":[],"primary":[]})
     data.setdefault("transparencyInfo", {})
     data["transparencyInfo"]["totalListings"] = len(merged)
+    data["transparencyInfo"]["appliedPreserved"] = len(applied_ids)
     json.dump(data, open(out_path,"w",encoding="utf-8"), indent=2, ensure_ascii=False)
     print(json.dumps({"added":added}))

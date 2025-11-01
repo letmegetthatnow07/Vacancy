@@ -1,8 +1,123 @@
 {
+  "version": 2,
+  "buildCommand": "echo 'No build needed - static files only'",
+  "outputDirectory": ".",
+  "public": true,
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600, s-maxage=86400"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        }
+      ]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, no-cache, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)\\.json$",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/json; charset=utf-8"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=300, s-maxage=600"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)\\.js$",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/javascript; charset=utf-8"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, s-maxage=604800, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)\\.css$",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "text/css; charset=utf-8"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, s-maxage=604800, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/index.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, s-maxage=3600, must-revalidate"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/health",
+      "destination": "/health.json"
+    },
+    {
+      "source": "/data",
+      "destination": "/data.json"
+    }
+  ],
   "functions": {
     "api/scrape-jobs.py": {
+      "runtime": "python3.11",
       "maxDuration": 60,
-      "memory": 512
+      "memory": 512,
+      "includeFiles": [
+        "rules.json",
+        "sources/**",
+        "tools/**"
+      ],
+      "excludeFiles": [
+        ".git/**",
+        "node_modules/**",
+        ".github/**"
+      ]
     }
   },
   "crons": [
@@ -19,12 +134,16 @@
       "schedule": "0 2 * * 0"
     }
   ],
+  "env": {
+    "GITHUB_TOKEN": "@GITHUB_TOKEN",
+    "GITHUB_REPO": "@GITHUB_REPO"
+  },
   "github": {
     "enabled": true,
     "autoAlias": true,
-    "silent": true
+    "silent": true,
+    "autoJobCancelPreviousOnPush": true
   },
-  "buildCommand": "echo 'No build needed'",
-  "outputDirectory": ".",
-  "public": true
+  "regions": ["bom1"],
+  "trailingSlash": false
 }

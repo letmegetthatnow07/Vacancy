@@ -117,3 +117,38 @@ html,body{background:var(--bg);color:var(--text);font-family:Inter,system-ui,-ap
 #confirm .row{display:flex;gap:10px;justify-content:flex-end;margin-top:12px;flex-direction:row-reverse}
 #snackbar{position:fixed;left:50%;bottom:64px;transform:translateX(-50%);background:#0f172a;color:#ffffff;border:1px solid #1f2740;border-radius:12px;padding:10px 12px;font-size:13px;display:none;align-items:center;gap:12px;z-index:35}
 #snackbar .count{color:#c7d2fe}
+
+/* Professional Confirmation Modal - NEW */
+.confirm-modal{position:fixed;inset:0;z-index:1001;display:flex;align-items:center;justify-content:center;animation:fadeInModal 0.2s ease}
+
+.confirm-modal-overlay{position:absolute;inset:0;background:rgba(15,23,42,.5);backdrop-filter:blur(2px)}
+
+.confirm-modal-content{position:relative;z-index:1002;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px;max-width:400px;width:90%;box-shadow:0 20px 60px rgba(15,23,42,.3);text-align:center}
+
+.confirm-modal-content h3{margin:0 0 12px 0;font-size:18px;font-weight:600;color:var(--primary);letter-spacing:0.3px}
+
+.confirm-modal-content p{margin:0 0 20px 0;font-size:15px;color:var(--text);line-height:1.5}
+
+.confirm-modal-buttons{display:flex;gap:10px;justify-content:center;flex-direction:row-reverse}
+
+.confirm-modal-buttons .btn{min-width:90px;padding:8px 16px;font-size:13px;font-weight:500}
+
+.confirm-modal-buttons .cancel-btn{background:#fff;border:1px solid var(--line);color:var(--muted)}
+
+.confirm-modal-buttons .cancel-btn:hover{background:var(--bg);color:var(--text)}
+
+.confirm-modal-buttons .confirm-btn{background:var(--primary);border:1px solid var(--primary-line);color:#fff}
+
+.confirm-modal-buttons .confirm-btn:hover{background:#1e40af;opacity:0.9}
+
+.confirm-modal-buttons .confirm-btn:focus{outline:2px solid var(--primary);outline-offset:2px}
+
+@keyframes fadeInModal{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}
+
+@media(max-width:480px){
+  .confirm-modal-content{width:95%;padding:20px}
+  .confirm-modal-content h3{font-size:16px}
+  .confirm-modal-content p{font-size:14px}
+  .confirm-modal-buttons{flex-direction:column}
+  .confirm-modal-buttons .btn{width:100%}
+}

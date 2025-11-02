@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# qc_and_learn.py v2025-11-02-critical-fixes
-# FIXES: C-003, H-001, H-002, H-004, A-002 (ID consistency), A-004 (better state loading)
+# qc_and_learn.py v2025-11-02-COMPLETE-FIXES
+# FIXES: C-003 (Hindi detection), H-001 (applied protection), H-002 (exam_done archival), H-004 (timestamp parsing)
 
-import json, pathlib, re, argparse, urllib.parse, os
+import json, pathlib, re, argparse, urllib.parse, os, sys
 from datetime import datetime, timedelta, date, timezone
 
 P = pathlib.Path
@@ -12,9 +12,9 @@ def JLOAD(p, d):
         if P(p).exists():
             return json.loads(P(p).read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
-        print(f"[WARN] {p} corrupted: {e}, using default", file=__import__('sys').stderr)
+        print(f"[WARN] {p} corrupted: {e}, using default", file=sys.stderr)
     except Exception as e:
-        print(f"[WARN] {p} error: {e}, using default", file=__import__('sys').stderr)
+        print(f"[WARN] {p} error: {e}, using default", file=sys.stderr)
     return d
 
 def JLOADL(p):
@@ -40,7 +40,7 @@ def JWRITE(p, obj):
         P(temp_path).write_text(json.dumps(obj, indent=2, ensure_ascii=False), encoding="utf-8")
         os.replace(temp_path, str(p))
     except Exception as e:
-        print(f"[ERROR] Writing {p}: {e}", file=__import__('sys').stderr)
+        print(f"[ERROR] Writing {p}: {e}", file=sys.stderr)
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--mode", default="nightly")
@@ -129,7 +129,7 @@ def stable_id(applyLink):
 def check_eligibility(job):
     """
     FIX C-003: ONLY 3 checks for removal:
-    1. Hindi title (non-ASCII >30%)
+    1. Hindi title (Devanagari >30%)
     2. Invalid/corrupted title (too short)
     3. Wrong domicile (NOT Bihar or All India)
     
@@ -138,14 +138,19 @@ def check_eligibility(job):
     title = job.get('title', '')
     domicile = (job.get('domicile', '') or 'N/A').upper()
     
-    # Check 1: Title must be English (not corrupted Hindi)
-    non_ascii = sum(1 for c in title if ord(c) > 127) / max(len(title), 1)
-    if non_ascii > 0.3:
-        return False, "Hindi_title"
+    # Check 1: Title must be English (not pure Hindi)
+    # Devanagari Unicode range: 0x0900-0x097F
+    devanagari_count = sum(1 for c in title if 0x0900 <= ord(c) <= 0x097F)
+    total_chars = len(title)
     
-    # Check 2: Title must be valid (catches obvious garbage, but allow short names like "SSC")
-    # Relaxed: only reject if VERY short AND looks like noise
-    if not title or (len(title) < 3 and not re.search(r"[A-Z]{2,}", title)):
+    if total_chars > 0:
+        devanagari_ratio = devanagari_count / total_chars
+        if devanagari_ratio > 0.3:
+            print(f"[FILTER] Hindi title ({devanagari_ratio:.0%}): {title[:60]}", file=sys.stderr)
+            return False, "Hindi_title"
+    
+    # Check 2: Title must be valid (minimum length)
+    if not title or (len(title.strip()) < 3 and not re.search(r"[A-Z]{2,}", title)):
         return False, "Invalid_title"
     
     # Check 3: Domicile must be Bihar or All India
@@ -265,7 +270,7 @@ for jid, state_rec in user_state.items():
     
     if action == "applied":
         applied_ids.append(jid)
-    elif action == "other":
+    elif action == "other" or action == "not_interested":
         other_marked_ids.append(jid)
     elif action == "exam_done":
         ts = state_rec.get("ts")
@@ -282,7 +287,7 @@ for jid, state_rec in user_state.items():
                 else:
                     user_state[jid]["should_archive"] = True
             except ValueError as e:
-                print(f"[WARN] Bad timestamp for {jid}: {ts}", file=__import__('sys').stderr)
+                print(f"[WARN] Bad timestamp for {jid}: {ts}", file=sys.stderr)
                 # If timestamp parsing fails, keep job (don't lose it)
                 applied_ids.append(jid)
         else:
@@ -291,7 +296,7 @@ for jid, state_rec in user_state.items():
 applied_ids = list(set(applied_ids))  # Deduplicate
 other_marked_ids = list(set(other_marked_ids))
 
-print(f"[QC] Loaded {len(applied_ids)} applied IDs, {len(other_marked_ids)} other marked", file=__import__('sys').stderr)
+print(f"[QC] Loaded {len(applied_ids)} applied IDs, {len(other_marked_ids)} other marked", file=sys.stderr)
 
 # FIX A-003: Dedup jobs by URL first, assign stable IDs
 url_to_job = {}
@@ -428,7 +433,7 @@ for r in reports:
     if r.get("reasonCode"):
         report_map[jid]["reasonCode"]=r["reasonCode"]
     else:
-        print(f"[WARN] report_missing_reasonCode for {jid}", file=__import__('sys').stderr)
+        print(f"[WARN] report_missing_reasonCode for {jid}", file=sys.stderr)
 
 def keep_date(j):
     d=parse_date_any(j.get("deadline"))
@@ -446,10 +451,11 @@ primary=[]
 other=[]
 rejected_hindi=0
 rejected_ineligible=0
+archived_exam_done=0
 
 # FIX H-001 + H-002: Process jobs with applied_ids ALREADY extracted
 for j in jobs:
-    jid = j["id"]
+    jid = j.get("id")
     h = host(j.get("applyLink"))
 
     # FIX C-003: Check eligibility (ONLY 3 reasons)
@@ -508,20 +514,24 @@ for j in jobs:
         if c:
             j["numberOfPosts"]=c
 
-    # FIX H-001: Check applied status FIRST (protection)
+    # FIX H-001 + H-002: Check applied status FIRST (protection)
     if jid in applied_ids:
+        # NEVER filter applied jobs (even if expired!)
+        # But check if should be archived (exam_done >7 days)
+        if jid in user_state:
+            state_rec = user_state.get(jid)
+            if state_rec and state_rec.get("action") == "exam_done":
+                # Check if marked for archival
+                if state_rec.get("should_archive"):
+                    j.setdefault("flags",{})["removed_reason"]="auto_archived_exam_done_7d"
+                    j.setdefault("flags",{})["archived_reason"]="exam_done_7d_expired"
+                    archived.append(j)
+                    archived_exam_done += 1
+                    continue
+        
+        # Keep applied job (no filtering!)
         primary.append(j)
         continue
-
-    # FIX H-004: Check exam_done + 7 days (ONLY removal reason for non-applied!)
-    if jid in user_state:
-        state_rec = user_state.get(jid)
-        if state_rec and state_rec.get("action") == "exam_done":
-            # Check if marked for archival
-            if state_rec.get("should_archive"):
-                j.setdefault("flags",{})["removed_reason"]="auto_archived_exam_done_7d"
-                archived.append(j)
-                continue
 
     # KEEP all jobs (don't remove for expired deadline!)
     if last and last < today:
@@ -559,6 +569,7 @@ transp.update({
     "appliedCount": len(applied_ids),
     "rejectedHindi": rejected_hindi,
     "rejectedIneligible": rejected_ineligible,
+    "archivedExamDone": archived_exam_done,
     "learning": {
         "hosts": len(learn.get("byHost") or {}),
         "slugs": len(learn.get("bySlug") or {}),
@@ -572,7 +583,7 @@ out = {
     "sections": {
         "applied": applied_ids,
         "other": other_marked_ids,
-        "primary": [j["id"] for j in primary if j["id"] not in applied_ids]
+        "primary": [j.get("id") for j in primary if j.get("id") not in applied_ids]
     },
     "transparencyInfo": transp
 }
@@ -582,4 +593,4 @@ JWRITE("rules.json", rules)
 JWRITE("learn_registry.json", learn)
 JWRITE("learn.json", {"generatedAt": datetime.utcnow().isoformat()+"Z","runMode": RUN_MODE})
 JWRITE("health.json", {"ok": True, **transp})
-print(f"✓ QC and Learn complete: {len(primary)+len(other)} active ({len(applied_ids)} applied), {len(archived)} archived (hindi:{rejected_hindi}, ineligible:{rejected_ineligible}), mode={RUN_MODE}", file=__import__('sys').stderr)
+print(f"✓ QC complete: {len(primary)+len(other)} active ({len(applied_ids)} applied), {len(archived)} archived (hindi:{rejected_hindi}, ineligible:{rejected_ineligible}, exam_done_7d:{archived_exam_done}), mode={RUN_MODE}", file=sys.stderr)

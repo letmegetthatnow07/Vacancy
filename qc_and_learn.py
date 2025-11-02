@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-# qc_and_learn.py v2025-11-02-COMPLETE-FIXES
-# FIXES: C-003 (Hindi detection), H-001 (applied protection), H-002 (exam_done archival), H-004 (timestamp parsing)
+# qc_and_learn.py v2025-11-02-WITH-ELIGIBILITY-MODULE
+# FIXES: C-003 (comprehensive eligibility), H-001 (applied protection), H-002 (exam_done)
 
 import json, pathlib, re, argparse, urllib.parse, os, sys
 from datetime import datetime, timedelta, date, timezone
+from tools.eligibility import is_eligible  # FIX: Import comprehensive eligibility
 
 P = pathlib.Path
 
@@ -115,10 +116,7 @@ def parse_date_any(s):
     return None
 
 def stable_id(applyLink):
-    """
-    FIX A-002: Generate DETERMINISTIC stable ID using SHA1
-    Matches collector.py and schema_merge.py
-    """
+    """Generate DETERMINISTIC stable ID using SHA1"""
     import hashlib
     try:
         norm = norm_url(applyLink)
@@ -128,36 +126,17 @@ def stable_id(applyLink):
 
 def check_eligibility(job):
     """
-    FIX C-003: ONLY 3 checks for removal:
-    1. Hindi title (Devanagari >30%)
-    2. Invalid/corrupted title (too short)
-    3. Wrong domicile (NOT Bihar or All India)
-    
-    DO NOT REMOVE FOR: Missing qualification, missing deadline, missing posts
+    FIX C-003: Use comprehensive eligibility module
+    Delegates to tools/eligibility.py for sophisticated filtering
     """
     title = job.get('title', '')
-    domicile = (job.get('domicile', '') or 'N/A').upper()
     
-    # Check 1: Title must be English (not pure Hindi)
-    # Devanagari Unicode range: 0x0900-0x097F
-    devanagari_count = sum(1 for c in title if 0x0900 <= ord(c) <= 0x097F)
-    total_chars = len(title)
+    # Use the merged eligibility function
+    is_eligible_result, reason = is_eligible(title)
     
-    if total_chars > 0:
-        devanagari_ratio = devanagari_count / total_chars
-        if devanagari_ratio > 0.3:
-            print(f"[FILTER] Hindi title ({devanagari_ratio:.0%}): {title[:60]}", file=sys.stderr)
-            return False, "Hindi_title"
+    if not is_eligible_result:
+        return False, reason
     
-    # Check 2: Title must be valid (minimum length)
-    if not title or (len(title.strip()) < 3 and not re.search(r"[A-Z]{2,}", title)):
-        return False, "Invalid_title"
-    
-    # Check 3: Domicile must be Bihar or All India
-    if 'BIHAR' not in domicile and 'ALL' not in domicile:
-        return False, f"Domicile_{domicile}"
-    
-    # ✅ DO NOT CHECK: qualification, deadline, numberOfPosts
     return True, "Eligible"
 
 UPD_TOK = [
@@ -258,7 +237,6 @@ def matches_non_vacancy_pattern(h, title, url):
     return False
 
 # FIX H-001: Extract applied_ids BEFORE processing jobs
-# Build applied_ids from user_state.json FIRST
 applied_ids = []
 other_marked_ids = []
 today = date.today()
@@ -450,7 +428,11 @@ def keep_date(j):
 primary=[]
 other=[]
 rejected_hindi=0
-rejected_ineligible=0
+rejected_teacher=0
+rejected_tech=0
+rejected_pg=0
+rejected_skills=0
+rejected_domicile=0
 archived_exam_done=0
 
 # FIX H-001 + H-002: Process jobs with applied_ids ALREADY extracted
@@ -458,13 +440,25 @@ for j in jobs:
     jid = j.get("id")
     h = host(j.get("applyLink"))
 
-    # FIX C-003: Check eligibility (ONLY 3 reasons)
-    is_eligible, reason = check_eligibility(j)
-    if not is_eligible:
+    # FIX C-003: Check eligibility using comprehensive module
+    is_eligible_result, reason = check_eligibility(j)
+    if not is_eligible_result:
+        # Track rejection reasons
         if "Hindi" in reason:
             rejected_hindi += 1
+        elif "Teacher" in reason:
+            rejected_teacher += 1
+        elif "Tech" in reason:
+            rejected_tech += 1
+        elif "Postgraduate" in reason:
+            rejected_pg += 1
+        elif "Specialty" in reason:
+            rejected_skills += 1
+        elif "Domicile" in reason:
+            rejected_domicile += 1
         else:
-            rejected_ineligible += 1
+            pass  # Other reasons
+        
         j.setdefault("flags",{})["removed_reason"] = f"auto_filtered_{reason}"
         j.setdefault("flags",{})["auto_filtered"] = reason
         archived.append(j)
@@ -568,7 +562,11 @@ transp.update({
     "archivedCount": len(archived),
     "appliedCount": len(applied_ids),
     "rejectedHindi": rejected_hindi,
-    "rejectedIneligible": rejected_ineligible,
+    "rejectedTeacher": rejected_teacher,
+    "rejectedTech": rejected_tech,
+    "rejectedPostgraduate": rejected_pg,
+    "rejectedSpecialSkills": rejected_skills,
+    "rejectedDomicile": rejected_domicile,
     "archivedExamDone": archived_exam_done,
     "learning": {
         "hosts": len(learn.get("byHost") or {}),
@@ -593,4 +591,9 @@ JWRITE("rules.json", rules)
 JWRITE("learn_registry.json", learn)
 JWRITE("learn.json", {"generatedAt": datetime.utcnow().isoformat()+"Z","runMode": RUN_MODE})
 JWRITE("health.json", {"ok": True, **transp})
-print(f"✓ QC complete: {len(primary)+len(other)} active ({len(applied_ids)} applied), {len(archived)} archived (hindi:{rejected_hindi}, ineligible:{rejected_ineligible}, exam_done_7d:{archived_exam_done}), mode={RUN_MODE}", file=sys.stderr)
+
+total_rejected = rejected_hindi + rejected_teacher + rejected_tech + rejected_pg + rejected_skills + rejected_domicile
+
+print(f"✓ QC complete: {len(primary)+len(other)} active ({len(applied_ids)} applied), {len(archived)} archived", file=sys.stderr)
+print(f"  Rejected: hindi={rejected_hindi}, teacher={rejected_teacher}, tech={rejected_tech}, pg={rejected_pg}, skills={rejected_skills}, domicile={rejected_domicile}", file=sys.stderr)
+print(f"  Total rejected: {total_rejected}, mode={RUN_MODE}", file=sys.stderr)

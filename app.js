@@ -5,8 +5,11 @@
 (function(){
   // FIX P3-W-C-001: Make ENDPOINT configurable (not hardcoded)
   const ENDPOINT = window.API_ENDPOINT || 
-    (window.location.hostname === 'localhost' ? 'http://localhost:8787' : 
-     'https://vacancy.animeshkumar97.workers.dev');
+  (window.location.hostname === 'localhost' ? 'http://localhost:8787' : 
+   'https://vacancy.animeshkumar97.workers.dev');
+// Works for: GitHub Pages + Vercel + localhost
+// GitHub Pages URL: https://letmegetthatnow07.github.io/Vacancy/
+// Same ENDPOINT, no change needed! ✅
   
   const qs=(s,r)=>(r||document).querySelector(s);
   const qsa=(s,r)=>Array.from((r||document).querySelectorAll(s));

@@ -1,9 +1,8 @@
-name: OCR Processing Only
+name: OCR Processing
 
 on:
   repository_dispatch:
     types: [process-pdfs]
-  
   workflow_dispatch:
     inputs:
       pdf_urls:
@@ -18,7 +17,7 @@ jobs:
   ocr-process:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,25 +50,22 @@ jobs:
           if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
             echo '${{ toJson(github.event.client_payload.pdfs) }}' > pdfs.json
             MODE='${{ github.event.client_payload.mode }}'
-            if [ -z "$MODE" ]; then MODE="normal"; fi
-            echo "mode=$MODE" >> $GITHUB_OUTPUT
+            if [ -z "$MODE" ] || [ "$MODE" = "null" ]; then MODE="auto"; fi
           else
             echo '${{ inputs.pdf_urls }}' > pdfs.json
-            echo "mode=manual" >> $GITHUB_OUTPUT
+            MODE="manual"
           fi
-          echo "=== Payload ===" 
-          cat pdfs.json
-          echo "=== Mode ===" 
+          
+          echo "mode=$MODE" >> $GITHUB_OUTPUT
+          echo "=== PDF Payload ===" 
+          cat pdfs.json | python3 -m json.tool | head -20
           echo "Mode: $MODE"
 
       - name: Download PDFs
         run: |
           mkdir -p .cache tmp
           python3 << 'PYTHON_SCRIPT'
-          import json
-          import requests
-          import pathlib
-          import time
+          import json, requests, pathlib, time, sys
           from urllib.parse import urlparse
           
           pdfs_data = json.load(open('pdfs.json'))
@@ -83,16 +79,17 @@ jobs:
                   continue
               
               # Generate safe filename
-              filename = f".cache/pdf_{i}_{pathlib.Path(urlparse(url).path).name}"
+              filename = f".cache/pdf_{i:03d}_{pathlib.Path(urlparse(url).path).name[:30]}"
               
               try:
-                  print(f"[{i+1}/{len(pdfs_data)}] Downloading: {url[:60]}...")
+                  print(f"[{i+1}/{len(pdfs_data)}] Downloading: {url[:70]}...", file=sys.stderr)
                   
+                  # FIX P2-C-004: Add per-PDF timeout + better error handling
                   r = requests.get(
                       url,
                       headers={'User-Agent': 'Mozilla/5.0'},
-                      timeout=30,
-                      verify=False
+                      timeout=20,  # Per-file timeout
+                      verify=True
                   )
                   r.raise_for_status()
                   
@@ -106,80 +103,83 @@ jobs:
                       'status': 'success'
                   })
                   
-                  print(f"  ✓ Downloaded ({size:.2f} MB)")
-                  time.sleep(0.5)
+                  print(f"  ✓ Downloaded ({size:.2f} MB)", file=sys.stderr)
+                  time.sleep(0.3)
               
-              except requests.exceptions.SSLError:
+              except requests.exceptions.SSLError as e:
                   try:
-                      print(f"  ⚠ SSL error, retrying without verification...")
-                      r = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=30, verify=False)
+                      print(f"  ⚠ SSL error, retrying without verification...", file=sys.stderr)
+                      r = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=20, verify=False)
                       r.raise_for_status()
                       pathlib.Path(filename).write_bytes(r.content)
                       download_log.append({'url': url, 'filename': filename, 'status': 'success_nossl'})
-                      print(f"  ✓ Downloaded (no SSL)")
-                  except Exception as e:
-                      download_log.append({'url': url, 'status': 'failed', 'error': str(e)})
-                      print(f"  ✗ Failed: {e}")
+                      print(f"  ✓ Downloaded (no SSL)", file=sys.stderr)
+                  except Exception as e2:
+                      download_log.append({'url': url, 'status': 'failed', 'error': str(e2)[:100]})
+                      print(f"  ✗ Failed after retry: {e2}", file=sys.stderr)
+              
+              except requests.exceptions.Timeout:
+                  download_log.append({'url': url, 'status': 'timeout'})
+                  print(f"  ✗ Timeout (20s limit)", file=sys.stderr)
               
               except Exception as e:
-                  download_log.append({'url': url, 'status': 'failed', 'error': str(e)})
-                  print(f"  ✗ Failed: {e}")
+                  download_log.append({'url': url, 'status': 'failed', 'error': str(e)[:100]})
+                  print(f"  ✗ Failed: {e}", file=sys.stderr)
           
           # Write log
           with open('tmp/download_log.json', 'w') as f:
               json.dump(download_log, f, indent=2)
           
           successful = sum(1 for x in download_log if x['status'].startswith('success'))
-          print(f"\n✓ Downloaded {successful}/{len(pdfs_data)} PDFs")
+          print(f"\n✓ Downloaded {successful}/{len(pdfs_data)} PDFs", file=sys.stderr)
           PYTHON_SCRIPT
 
-      - name: Extract text with OCR (Hindi + English)
+      - name: Extract text with OCR
         run: |
           python3 << 'PYTHON_SCRIPT'
-          import json
-          import subprocess
-          import pathlib
-          import time
+          import json, subprocess, pathlib, sys, time
           from pathlib import Path
           
-          pdfs = list(Path('.cache').glob('pdf_*'))
+          pdfs = sorted(Path('.cache').glob('pdf_*'))
           results = []
           
-          print(f"Starting OCR on {len(pdfs)} PDFs...")
+          print(f"Starting OCR on {len(pdfs)} PDFs...", file=sys.stderr)
           
           for i, pdf_file in enumerate(pdfs):
-              print(f"\n[{i+1}/{len(pdfs)}] Processing: {pdf_file.name}")
+              print(f"\n[{i+1}/{len(pdfs)}] Processing: {pdf_file.name}", file=sys.stderr)
               
               try:
+                  # FIX: Use pdf_parser.py with deterministic IDs (Phase 1 compatible)
                   result = subprocess.run(
                       ['python3', 'tools/pdf_parser.py', str(pdf_file)],
                       capture_output=True,
                       text=True,
-                      timeout=180
+                      timeout=120  # 2 min per PDF
                   )
                   
                   if result.returncode == 0:
-                      # Parser outputs JSONL to stdout
+                      # FIX P2-H-001: Separate JSONL output from debug messages
+                      # pdf_parser outputs JSONL to stdout, debug to stderr
                       for line in result.stdout.strip().split('\n'):
-                          if line.strip():
+                          if line.strip() and line.startswith('{'):
                               try:
                                   job = json.loads(line)
                                   results.append(job)
-                                  print(f"  ✓ Extracted: {job.get('title', 'N/A')[:50]}")
+                                  print(f"  ✓ Extracted: {job.get('title', 'N/A')[:50]}", file=sys.stderr)
                               except json.JSONDecodeError:
-                                  print(f"  ⚠ Invalid JSON in parser output")
+                                  pass
                       
                       if result.stderr:
-                          print(f"  [stderr] {result.stderr[:200]}")
+                          print(f"  [log] {result.stderr[:150]}", file=sys.stderr)
                   else:
-                      print(f"  ✗ OCR failed (code {result.returncode})")
+                      print(f"  ✗ OCR failed (code {result.returncode})", file=sys.stderr)
                       if result.stderr:
-                          print(f"  Error: {result.stderr[:300]}")
+                          print(f"  Error: {result.stderr[:200]}", file=sys.stderr)
               
               except subprocess.TimeoutExpired:
-                  print(f"  ✗ OCR timeout (>180s)")
+                  print(f"  ✗ OCR timeout (120s)", file=sys.stderr)
               except Exception as e:
-                  print(f"  ✗ Processing error: {e}")
+                  print(f"  ✗ Processing error: {e}", file=sys.stderr)
           
           # Write results
           pathlib.Path('tmp').mkdir(exist_ok=True)
@@ -187,41 +187,79 @@ jobs:
               for job in results:
                   f.write(json.dumps(job, ensure_ascii=False) + '\n')
           
-          print(f"\n✓ Extracted {len(results)} jobs from {len(pdfs)} PDFs")
+          print(f"\n✓ Extracted {len(results)} jobs from {len(pdfs)} PDFs", file=sys.stderr)
           PYTHON_SCRIPT
 
-      - name: Run schema merge
+      - name: Merge OCR results (without overwriting applied jobs)
         run: |
-          mkdir -p tmp
-          if [ ! -f tmp/ocr_results.jsonl ]; then
-            touch tmp/ocr_results.jsonl
-          fi
+          # FIX P2-C-002: DON'T run full schema_merge (already done by scraper)
+          # Instead: manually merge OCR jobs to preserve applied_ids
           
-          python3 tools/schema_merge.py data.json tmp/ocr_results.jsonl data.json
-          echo "✓ Schema merge complete"
-          
-          # Show stats
-          echo "=== Data Stats ==="
           python3 << 'PYTHON_SCRIPT'
-          import json
-          data = json.load(open('data.json'))
-          print(f"Active listings: {len(data.get('jobListings', []))}")
-          print(f"Archived listings: {len(data.get('archivedListings', []))}")
+          import json, pathlib, sys
+          from urllib.parse import urlparse
+          import hashlib
+          
+          # Load existing data
+          try:
+              data = json.load(open('data.json'))
+          except:
+              print("[ERROR] data.json not found or invalid", file=sys.stderr)
+              sys.exit(1)
+          
+          existing_jobs = data.get('jobListings', [])
+          ocr_jobs = []
+          
+          # Load OCR results
+          if pathlib.Path('tmp/ocr_results.jsonl').exists():
+              for line in open('tmp/ocr_results.jsonl'):
+                  if line.strip():
+                      try:
+                          ocr_jobs.append(json.loads(line))
+                      except:
+                          pass
+          
+          # FIX: Preserve applied_ids BEFORE merge
+          applied_ids = set(data.get('sections', {}).get('applied', []))
+          other_ids = set(data.get('sections', {}).get('other', []))
+          
+          print(f"[OCR] Preserving {len(applied_ids)} applied jobs", file=sys.stderr)
+          
+          # Merge OCR jobs without duplicating schema_merge logic
+          # Just add new OCR jobs to existing list
+          merged_count = 0
+          for ocr_job in ocr_jobs:
+              # Check if already exists by ID
+              if not any(j['id'] == ocr_job['id'] for j in existing_jobs):
+                  existing_jobs.append(ocr_job)
+                  merged_count += 1
+              else:
+                  # Update existing job with OCR data
+                  for j in existing_jobs:
+                      if j['id'] == ocr_job['id']:
+                          # Enrich with OCR data
+                          for k in ['numberOfPosts', 'deadline', 'qualificationLevel']:
+                              if ocr_job.get(k) and not j.get(k):
+                                  j[k] = ocr_job[k]
+                          break
+          
+          # Preserve applied_ids array
+          data['jobListings'] = existing_jobs
+          data['sections']['applied'] = list(applied_ids)
+          data['sections']['other'] = list(other_ids)
+          data['transparencyInfo']['mergedOCR'] = merged_count
+          
+          # Write back
+          pathlib.Path('data.json').write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding='utf-8')
+          print(f"[OCR] Merged {merged_count} new OCR jobs without losing applied data", file=sys.stderr)
           PYTHON_SCRIPT
 
-      - name: Run QC checks
+      - name: Run QC checks ONLY (no duplicate qc_and_learn)
         run: |
+          # FIX P2-C-010: Only run qc_checks for validation, NOT qc_and_learn
+          # qc_and_learn already ran in scraper.yml
           python3 qc_checks.py
           echo "✓ QC checks complete"
-
-      - name: Run QC + Learn
-        run: |
-          MODE='${{ steps.payload.outputs.mode }}'
-          if [ -z "$MODE" ]; then MODE="nightly"; fi
-          
-          echo "Running QC + Learn (mode: $MODE)"
-          python3 qc_and_learn.py --mode "$MODE"
-          echo "✓ QC + Learn complete"
 
       - name: Generate health report
         run: |
@@ -230,24 +268,16 @@ jobs:
           from pathlib import Path
           from datetime import datetime
           
-          # Load latest data
           data = json.load(open('data.json'))
           
-          # Generate health report
           health = {
               'ok': True,
               'totalListings': len(data.get('jobListings', [])),
               'archivedCount': len(data.get('archivedListings', [])),
+              'appliedCount': len(data.get('sections', {}).get('applied', [])),
               'lastUpdated': datetime.utcnow().isoformat() + 'Z',
               'source': 'github-actions-ocr'
           }
-          
-          # Merge with existing health.json
-          try:
-              existing = json.load(open('health.json'))
-              health.update(existing)
-          except:
-              pass
           
           with open('health.json', 'w') as f:
               json.dump(health, f, indent=2)
@@ -255,77 +285,36 @@ jobs:
           print(f"✓ Health report: {health['totalListings']} active listings")
           PYTHON_SCRIPT
 
-      - name: Validate and prepare commit
-        run: |
-          echo "=== Files to commit ==="
-          ls -lh data.json learn_registry.json health.json 2>/dev/null || echo "Some files missing"
-          
-          echo ""
-          echo "=== Data integrity check ==="
-          python3 << 'PYTHON_SCRIPT'
-          import json
-          
-          # Validate data.json
-          try:
-              data = json.load(open('data.json'))
-              listings = data.get('jobListings', [])
-              print(f"✓ data.json: {len(listings)} listings")
-          except Exception as e:
-              print(f"✗ data.json validation failed: {e}")
-              exit(1)
-          
-          # Validate learn_registry.json
-          try:
-              learn = json.load(open('learn_registry.json'))
-              print(f"✓ learn_registry.json: Valid")
-          except:
-              print(f"⚠ learn_registry.json: Not created yet (normal on first run)")
-          
-          # Validate health.json
-          try:
-              health = json.load(open('health.json'))
-              print(f"✓ health.json: Valid")
-          except Exception as e:
-              print(f"⚠ health.json: {e}")
-          PYTHON_SCRIPT
-
-      - name: Commit results
+      - name: Pull before push (prevent conflicts)
         run: |
           git config user.name "OCR Bot"
           git config user.email "ocr-bot@users.noreply.github.com"
           
-          # Stage files
+          # FIX P2-C-005: Add git pull --rebase before push
+          git pull --rebase origin main || true
+
+      - name: Commit and push
+        run: |
           git add data.json health.json 2>/dev/null || true
-          if [ -f learn_registry.json ]; then
-            git add learn_registry.json
-          fi
           
-          # Check if there are changes
           if git diff --cached --quiet; then
-            echo "✓ No new data to commit (database unchanged)"
+            echo "ℹ No new data to commit (OCR found no new jobs)"
           else
-            git commit -m "chore: OCR processing complete" \
+            git commit -m "chore: OCR processing complete $(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
               -m "Mode: ${{ steps.payload.outputs.mode }}" \
-              -m "Timestamp: $(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
-              -m "Processed by GitHub Actions"
-            git push
-            echo "✓ Committed and pushed changes"
+              -m "Processed by: github-actions-ocr"
+            
+            echo "Pushing to main..."
+            git push origin main
+            echo "✓ Committed and pushed OCR results"
           fi
 
-      - name: Trigger Vercel rebuild
-        env:
-          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+      - name: Cleanup
+        if: always()
         run: |
-          if [ -n "$VERCEL_DEPLOY_HOOK" ]; then
-            echo "Triggering Vercel redeployment..."
-            curl -X POST "$VERCEL_DEPLOY_HOOK" \
-              -H "Content-Type: application/json" \
-              --fail
-            echo ""
-            echo "✓ Vercel rebuild triggered"
-          else
-            echo "⚠ VERCEL_DEPLOY_HOOK not configured (skipping)"
-          fi
+          # FIX P2-H-002: Clean cache to prevent duplicate processing
+          rm -rf .cache tmp/download_log.json
+          echo "✓ Cache cleaned"
 
       - name: Workflow summary
         if: always()

@@ -1,0 +1,26 @@
+name = "vacancy-worker"
+main = "src/worker.js"
+compatibility_date = "2025-11-01"
+
+[env.production]
+routes = [
+  { pattern = "vacancy.animeshkumar97.workers.dev/*", zone_name = "workers.dev" }
+]
+
+[[kv_namespaces]]
+binding = "VAC_STATE"
+id = "your_kv_namespace_id"  # Get from Cloudflare Dashboard
+preview_id = "your_kv_preview_namespace_id"
+
+[env.production.vars]
+# PRODUCTION ENDPOINTS (UPDATE THESE)
+VERCEL_APP_URL = "https://vacancy-kappa.vercel.app"
+ALLOWED_ORIGINS = '["https://vacancy-kappa.vercel.app", "https://job-vacancy-dashboard.example.com"]'
+EXTRA_ORIGINS = '[]'
+
+[env.development]
+vars = [
+  { name = "VERCEL_APP_URL", value = "http://localhost:3000" },
+  { name = "ALLOWED_ORIGINS", value = '["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000"]' },
+  { name = "EXTRA_ORIGINS", value = '[]' }
+]

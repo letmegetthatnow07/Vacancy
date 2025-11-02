@@ -203,8 +203,6 @@ if __name__ == "__main__":
     data = json.load(open(data_path,"r",encoding="utf-8"))
     existing = data.get("jobListings") or []
     sections = data.get("sections") or {"applied":[],"other":[]}
-    applied_ids = set(sections.get("applied", []))
-    other_ids = set(sections.get("other", []))
     
     cands = []
     if open(cand_path).readable():
@@ -216,9 +214,10 @@ if __name__ == "__main__":
                     pass
     
     # Get applied/other IDs from data structure
-applied_ids = set(data.get("sections", {}).get("applied", []))
-other_ids = set(data.get("sections", {}).get("other", []))
-merged, added = merge(existing, cands, applied_ids, other_ids)
+    applied_ids = set(data.get("sections", {}).get("applied", []))
+    other_ids = set(data.get("sections", {}).get("other", []))
+    merged, added = merge(existing, cands, applied_ids, other_ids)
+    
     data["jobListings"] = merged
     data.setdefault("archivedListings", data.get("archivedListings") or [])
     data.setdefault("sections", data.get("sections") or {"applied":[],"other":[],"primary":[]})

@@ -232,15 +232,29 @@ jobs:
           print(f"\n✓ {len(eligible_jobs)} eligible jobs", file=sys.stderr)
           PYTHON_SCRIPT
 
-      - name: Save eligible jobs to stdout (for Vercel pickup)
+      - name: Save eligible jobs to stdout
         run: |
-          cat tmp/eligible_jobs.jsonl
+          if [ -f tmp/eligible_jobs.jsonl ]; then
+            cat tmp/eligible_jobs.jsonl
+          else
+            echo "No eligible jobs found"
+          fi
+
+      - name: Trigger OCR Processing
+        if: success()
+        run: |
+          echo "Triggering OCR Processing workflow..."
+          curl -X POST https://api.github.com/repos/${{ github.repository }}/dispatches \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -d '{"event_type":"ocr-start"}' \
+            -v || echo "OCR dispatch failed (may already be processing)"
 
       - name: Cleanup
         if: always()
         run: |
-          rm -rf .cache tmp/download_log.json
-          echo "✓ Cache cleaned"
+          rm -rf .cache
+          echo "✓ Cleanup complete"
 
       - name: Workflow summary
         if: always()

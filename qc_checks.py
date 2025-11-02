@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# qc_checks.py — validate final data.json with auto-deduplication
-# FIXES: P2-H-009 (better dedup logic)
+# tools/qc_checks.py — validate final data.json with auto-deduplication
+# FIXES: P2-H-009 (better dedup logic), auto-archive invalid data
 
 import json, sys, pathlib
 from urllib.parse import urlparse
@@ -20,7 +20,7 @@ def parse_date_any(s):
     if not s or s.strip().upper() == "N/A": 
         return None
     s = s.strip()
-    for f in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %B %Y", "%d %b %Y"):
+    for f in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
         try: 
             return datetime.strptime(s, f).date()
         except: 
@@ -44,13 +44,13 @@ def make_key(job):
 def main():
     p = pathlib.Path("data.json")
     if not p.exists(): 
-        print("qc: data.json missing")
+        print("qc: data.json missing", file=sys.stderr)
         sys.exit(2)
     
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
     except Exception as e:
-        print(f"qc: invalid JSON: {e}")
+        print(f"qc: invalid JSON: {e}", file=sys.stderr)
         sys.exit(2)
 
     listings = data.get("jobListings", [])
@@ -85,15 +85,14 @@ def main():
             existing = deduped[existing_idx]
             
             # Compare data completeness
-            existing_score = len(existing.get("title", "")) + len(existing.get("deadline", ""))
-            current_score = len(rec.get("title", "")) + len(rec.get("deadline", ""))
+            existing_score = len(existing.get("title", "")) + len(existing.get("deadline", "")) + (existing.get("numberOfPosts") or 0)
+            current_score = len(rec.get("title", "")) + len(rec.get("deadline", "")) + (rec.get("numberOfPosts") or 0)
             
             if current_score > existing_score:
                 # Replace with better version
                 deduped[existing_idx] = rec
-                duplicates_removed += 1
-            else:
-                duplicates_removed += 1
+            
+            duplicates_removed += 1
             continue
         
         seen_keys[key] = len(deduped)
@@ -143,7 +142,7 @@ def main():
         p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
     # Print results
-    critical = [p for p in problems if "missing id" in p or "invalid JSON" in p]
+    critical = [m for m in problems if "missing id" in m or "invalid JSON" in m]
     
     if critical:
         print("qc: FAIL (critical errors)", file=sys.stderr)
@@ -153,7 +152,7 @@ def main():
     
     if problems:
         print(f"qc: OK with warnings (active={len(deduped)}, archived={len(archived)})", file=sys.stderr)
-        for m in problems[:5]:  # Show first 5 warnings
+        for m in problems[:5]:
             print(f" ⚠ {m}", file=sys.stderr)
     else:
         print(f"qc: OK (active={len(deduped)}, archived={len(archived)})", file=sys.stderr)

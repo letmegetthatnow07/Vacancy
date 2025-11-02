@@ -107,17 +107,7 @@
     "api/scrape-jobs.py": {
       "runtime": "python3.11",
       "maxDuration": 300,
-      "memory": 1024,
-      "includeFiles": [
-        "rules.json",
-        "tools/**",
-        "sources/**"
-      ],
-      "excludeFiles": [
-        ".git/**",
-        "node_modules/**",
-        ".github/**"
-      ]
+      "memory": 1024
     }
   },
   "crons": [
@@ -128,10 +118,6 @@
     {
       "path": "/api/scrape-jobs",
       "schedule": "0 13 * * *"
-    },
-    {
-      "path": "/api/scrape-jobs?mode=deep",
-      "schedule": "0 2 * * 0"
     }
   ],
   "env": {
@@ -140,13 +126,5 @@
     "CLOUDFLARE_KV_ACCOUNT_ID": "@CLOUDFLARE_KV_ACCOUNT_ID",
     "CLOUDFLARE_KV_API_TOKEN": "@CLOUDFLARE_KV_API_TOKEN",
     "CLOUDFLARE_KV_NAMESPACE_ID": "@CLOUDFLARE_KV_NAMESPACE_ID"
-  },
-  "github": {
-    "enabled": true,
-    "autoAlias": true,
-    "silent": true,
-    "autoJobCancelPreviousOnPush": true
-  },
-  "regions": ["bom1"],
-  "trailingSlash": false
+  }
 }

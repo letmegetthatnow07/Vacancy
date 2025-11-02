@@ -366,7 +366,7 @@
 
     let data=null;
     try{ 
-      const r=await fetch(bust("https://vacancy.animeshkumar97.workers.dev/data.json"),{cache:"no-store"});
+      const r=await fetch(bust(ENDPOINT+"/data.json"),{cache:"no-store"});
       if(!r.ok) throw 0; 
       data=await r.json(); 
     }catch{ 

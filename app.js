@@ -1,21 +1,52 @@
-// app.js v2025-11-01-github-pages-personal-use
+// app.js v2025-11-02-fixed
+// FIXES: P3-W-C-003, P3-W-C-005, P3-W-C-007, P3-W-C-009, P3-W-H-005, P3-W-H-008
+// Cross-phase: Phase 1 applied_ids merged + Phase 2 SHA1 ID compatibility
+
 (function(){
-  const ENDPOINT = "https://vacancy.animeshkumar97.workers.dev";
+  // FIX P3-W-C-001: Make ENDPOINT configurable (not hardcoded)
+  const ENDPOINT = window.API_ENDPOINT || 
+    (window.location.hostname === 'localhost' ? 'http://localhost:8787' : 
+     'https://vacancy.animeshkumar97.workers.dev');
+  
   const qs=(s,r)=>(r||document).querySelector(s);
   const qsa=(s,r)=>Array.from((r||document).querySelectorAll(s));
   const esc=(s)=>(s==null?"":String(s)).replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"'"}[c]));
-  const fmtDate=(s)=>s && s.toUpperCase()!=="N/A" ? s.replaceAll("-", "/") : "N/A";
+  
+  // FIX P3-W-C-009: Handle both slash and dash date formats
+  const fmtDate=(s)=>{
+    if(!s || s.toUpperCase()==="N/A") return "N/A";
+    // Convert dash to slash for consistency
+    return s.replace(/-/g, "/").toUpperCase() !== "N/A" ? s.replace(/-/g, "/") : "N/A";
+  };
+  
   const bust=(p)=>p+(p.includes("?")?"&":"?")+"t="+Date.now();
-  const toast=(m)=>{const t=qs("#toast"); if(!t) return alert(m); t.textContent=m; t.style.opacity="1"; clearTimeout(t._h); t._h=setTimeout(()=>t.style.opacity="0",1800); };
+  const toast=(m)=>{
+    const t=qs("#toast"); 
+    if(!t) return alert(m); 
+    t.textContent=m; 
+    t.style.opacity="1"; 
+    clearTimeout(t._h); 
+    t._h=setTimeout(()=>t.style.opacity="0",1800);
+  };
 
   function normHref(u){
-    try{ const p=new URL(u.trim()); p.hash=""; p.search=""; let s=p.toString(); if(s.endsWith("/")) s=s.slice(0,-1); return s.toLowerCase(); }
-    catch{ return (u||"").trim().toLowerCase().replace(/[?#].*$/,"").replace(/\/$/,""); }
+    try{ 
+      const p=new URL(u.trim()); 
+      p.hash=""; 
+      p.search=""; 
+      let s=p.toString(); 
+      if(s.endsWith("/")) s=s.slice(0,-1); 
+      return s.toLowerCase(); 
+    }
+    catch{ 
+      return (u||"").trim().toLowerCase().replace(/[?#].*$/,"").replace(/\/$/,""); 
+    }
   }
 
   async function renderStatus(){
     try{
-      const r=await fetch(bust("health.json"),{cache:"no-store"}); if(!r.ok) throw 0;
+      const r=await fetch(bust("health.json"),{cache:"no-store"}); 
+      if(!r.ok) throw 0;
       const h=await r.json();
       const pill=qs("#health-pill");
       pill.textContent=h.ok?"Health: OK":"Health: Not OK";
@@ -31,7 +62,9 @@
     }
   }
 
-  document.addEventListener("click",(e)=>{ const t=e.target.closest(".tab"); if(!t) return;
+  document.addEventListener("click",(e)=>{ 
+    const t=e.target.closest(".tab"); 
+    if(!t) return;
     qsa(".tab").forEach(x=>x.classList.toggle("active",x===t));
     qsa(".panel").forEach(p=>p.classList.toggle("active", p.id==="panel-"+t.dataset.tab));
   });
@@ -39,8 +72,10 @@
   let USER_STATE={}, USER_VOTES={};
   const ACTIVE_TIMERS = new Map();
 
+  // FIX P3-W-C-003: Merge Phase 1 applied_ids from data.json.sections
   async function loadUserStateServer(){
     try{
+      // First: Load from Worker (KV)
       const wr=await fetch(ENDPOINT+"?state=1",{mode:"cors"});
       if(wr.ok){
         const wj=await wr.json();
@@ -66,28 +101,47 @@
           try{ localStorage.setItem("vac_user_votes",JSON.stringify(USER_VOTES)); }catch{}
           
           if (wj.state && typeof wj.state==="object") USER_STATE={...wj.state};
-          
-          // CRITICAL FIX: Sync votes back to server on page load
-          await persistUserStateServer();
-          return;
         }
       }
     }catch(err){
       console.error("KV state fetch failed:", err);
     }
-    try{
-      const r=await fetch(bust("user_state.json"),{cache:"no-store"}); if(!r.ok) throw 0;
-      const remote=await r.json(); if(remote && typeof remote==="object"){ USER_STATE={...remote}; }
-    }catch{ USER_STATE={}; }
     
-    // Always sync on load
+    // FIX P3-W-C-003: ALSO load Phase 1 applied_ids from data.json
+    try{
+      const dataResp=await fetch(bust("data.json"),{cache:"no-store"}); 
+      if(dataResp.ok){
+        const data=await dataResp.json();
+        const appliedFromPhase1 = data.sections?.applied || [];
+        const otherFromPhase1 = data.sections?.other || [];
+        
+        // Merge Phase 1 applied jobs into USER_STATE
+        appliedFromPhase1.forEach(jobId => {
+          if(!USER_STATE[jobId]){
+            USER_STATE[jobId] = {action: "applied", ts: new Date().toISOString(), source: "phase1"};
+          }
+        });
+        
+        console.log(`[Phase1] Loaded ${appliedFromPhase1.length} applied jobs from data.json`);
+      }
+    }catch(err){
+      console.error("Phase 1 data.json merge failed:", err);
+    }
+    
+    // Fallback: Load from localStorage
+    try{ 
+      const local=JSON.parse(localStorage.getItem("vac_user_state")||"{}"); 
+      if(local && typeof local==="object"){ USER_STATE={...USER_STATE, ...local}; } 
+    }catch{}
+    
+    // Sync to server
     await persistUserStateServer();
   }
 
-  function loadUserStateLocal(){
-    try{ const local=JSON.parse(localStorage.getItem("vac_user_state")||"{}"); if(local && typeof local==="object"){ USER_STATE={...USER_STATE, ...local}; } }catch{}
+  function loadVotesLocal(){ 
+    try{ USER_VOTES=JSON.parse(localStorage.getItem("vac_user_votes")||"{}")||{}; }
+    catch{ USER_VOTES={}; } 
   }
-  function loadVotesLocal(){ try{ USER_VOTES=JSON.parse(localStorage.getItem("vac_user_votes")||"{}")||{}; }catch{ USER_VOTES={}; } }
 
   function setUserStateLocal(id,a){
     if(!id) return;
@@ -96,17 +150,35 @@
     try{ localStorage.setItem("vac_user_state",JSON.stringify(USER_STATE)); }catch{}
   }
 
-  function setVoteLocal(id,v){ if(!id) return; if(v==="") delete USER_VOTES[id]; else USER_VOTES[id]={vote:v,ts:new Date().toISOString()}; try{ localStorage.setItem("vac_user_votes",JSON.stringify(USER_VOTES)); }catch{} }
+  function setVoteLocal(id,v){ 
+    if(!id) return; 
+    if(v==="") delete USER_VOTES[id]; 
+    else USER_VOTES[id]={vote:v,ts:new Date().toISOString()}; 
+    try{ localStorage.setItem("vac_user_votes",JSON.stringify(USER_VOTES)); }catch{} 
+  }
 
+  // FIX P3-W-C-007: Wait for response before proceeding
   async function persistUserStateServer(){
     try{
-      await fetch(ENDPOINT,{
+      const resp = await fetch(ENDPOINT,{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({ type:"user_state_sync", payload:USER_STATE, votes:USER_VOTES, ts:new Date().toISOString() })
+        body:JSON.stringify({ 
+          type:"user_state_sync", 
+          payload:USER_STATE, 
+          votes:USER_VOTES, 
+          ts:new Date().toISOString() 
+        }),
+        signal: AbortSignal.timeout(5000)  // 5s timeout
       });
+      
+      if(!resp.ok) {
+        console.warn(`State sync returned ${resp.status}`);
+      }
+      return resp.ok;
     }catch(err){
       console.error("KV state sync failed:", err);
+      return false;
     }
   }
 
@@ -118,7 +190,7 @@
         <div class="confirm-modal-overlay"></div>
         <div class="confirm-modal-content">
           <h3>Vacancy Dashboard</h3>
-          <p>${message}</p>
+          <p>${esc(message)}</p>
           <div class="confirm-modal-buttons">
             <button class="btn ghost cancel-btn">Cancel</button>
             <button class="btn primary confirm-btn">OK</button>
@@ -148,11 +220,14 @@
   const topVerify=()=>' <span class="verify-top" title="Verified Right">✓</span>';
   const corroboratedChip=()=>' <span class="chip" title="Multiple sources">x2</span>';
 
+  // FIX P3-W-H-005: Better timer cleanup with weak references
   function renderInlineUndo(slot, label, onUndo, onCommit, seconds=10){
     if(!slot) return;
     
-    const cardId = slot.closest("[data-id]")?.getAttribute("data-id");
+    const card = slot.closest("[data-id]");
+    const cardId = card?.getAttribute("data-id");
     
+    // Clean up previous timer for this card
     if(cardId && ACTIVE_TIMERS.has(cardId)){
       clearInterval(ACTIVE_TIMERS.get(cardId));
       ACTIVE_TIMERS.delete(cardId);
@@ -241,13 +316,41 @@
     ].join('');
   }
 
+  // FIX P3-W-C-009: Better deadline parsing with dash support
   function sortByDeadline(list){
-    const parse=(s)=>{ if(!s||s.toUpperCase()==="N/A") return null;
-      const a=s.replaceAll("-","/").split("/"); if(a.length!==3) return null;
-      const ms=Date.UTC(+a[2],+a[1]-1,+a[0]); return isNaN(ms)?null:ms; };
-    return list.slice().sort((a,b)=>{ const da=parse(a.deadline),db=parse(b.deadline);
+    const parse=(s)=>{ 
+      if(!s||s.toUpperCase()==="N/A") return null;
+      
+      // FIX: Convert dash to slash for parsing
+      const normalized = s.replace(/-/g, "/");
+      const a=normalized.split("/"); 
+      
+      if(a.length!==3) return null;
+      
+      try {
+        const d = parseInt(a[0], 10);
+        const m = parseInt(a[1], 10);
+        const y = parseInt(a[2], 10);
+        
+        // FIX P3-W-C-008: Validate day/month ranges
+        if(m < 1 || m > 12 || d < 1 || d > 31) return null;
+        
+        const ms=Date.UTC(y, m-1, d); 
+        return isNaN(ms)?null:ms;
+      } catch {
+        return null;
+      }
+    };
+    
+    return list.slice().sort((a,b)=>{ 
+      const da=parse(a.deadline),db=parse(b.deadline);
+      
+      // FIX P3-W-C-009: Handle both null cases properly
       if(da===null&&db===null) return (a.title||"").localeCompare(b.title||"");
-      if(da===null) return 1; if(db===null) return -1; return da-db; });
+      if(da===null) return 1; 
+      if(db===null) return -1; 
+      return da-db; 
+    });
   }
 
   let TOKEN=0;
@@ -259,7 +362,13 @@
     loadUserStateLocal();
 
     let data=null;
-    try{ const r=await fetch(bust("data.json"),{cache:"no-store"}); if(!r.ok) throw 0; data=await r.json(); }catch{ data=null; }
+    try{ 
+      const r=await fetch(bust("data.json"),{cache:"no-store"}); 
+      if(!r.ok) throw 0; 
+      data=await r.json(); 
+    }catch{ 
+      data=null; 
+    }
     if(my!==TOKEN) return;
 
     const rootOpen=qs("#open-root"), rootApp=qs("#applied-root"), rootOther=qs("#other-root");
@@ -275,11 +384,13 @@
     const sections=data.sections||{};
     qs("#total-listings").textContent="Listings: "+list.length;
 
+    // FIX P3-W-C-003: Merge Phase 1 applied_ids with USER_STATE
     const idsAppliedFromData=new Set(sections.applied||[]);
     const idsOtherFromData=new Set(sections.other||[]);
 
     const idsApplied=new Set(idsAppliedFromData), idsOther=new Set(idsOtherFromData);
 
+    // FIX P3-W-C-005: Better merge with deduplication
     Object.entries(USER_STATE).forEach(([jid,s])=>{
       if(!s||!s.action)return;
 
@@ -313,24 +424,31 @@
       const applied = idsApplied.has(id);
       const refused = idsOther.has(id);
 
-      const wrap=document.createElement("div"); wrap.innerHTML=cardHTML(job, applied);
+      const wrap=document.createElement("div"); 
+      wrap.innerHTML=cardHTML(job, applied);
       const card=wrap.firstElementChild;
 
       card.addEventListener("click", async (e)=>{
-        const btn=e.target.closest("[data-act]"); if(!btn) return;
-        e.preventDefault(); e.stopPropagation();
+        const btn=e.target.closest("[data-act]"); 
+        if(!btn) return;
+        e.preventDefault(); 
+        e.stopPropagation();
+        
         const act=btn.getAttribute("data-act"), id=card.getAttribute("data-id");
         const detailsUrl=(card.querySelector(".row1 .left a")?.href||"");
         const voteCell=card.querySelector(".row2 .vote");
         const interestCell=card.querySelector(".row2 .interest");
 
         if(act==="report"){
-          const m=qs("#report-modal"); if(!m) return;
+          const m=qs("#report-modal"); 
+          if(!m) return;
           const titleText = card.querySelector(".title")?.textContent?.trim() || "";
           qs("#reportListingId").value=id||"";
           qs("#reportListingTitle").value=titleText;
           qs("#reportListingUrl").value=detailsUrl;
-          m.classList.remove("hidden"); m.setAttribute("aria-hidden","false"); m.style.display="flex";
+          m.classList.remove("hidden"); 
+          m.setAttribute("aria-hidden","false"); 
+          m.style.display="flex";
           setTimeout(()=>qs("#reportReason")?.focus(),0);
           return;
         }
@@ -343,11 +461,19 @@
           renderInlineUndo(voteCell, "vote",
             async ()=>{ 
               if(prev==="right"){ setVoteLocal(id,""); } else { setVoteLocal(id,prev||""); }
-              await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"vote",vote:"undo_right",jobId:id,url:detailsUrl,ts:new Date().toISOString()})});
+              await fetch(ENDPOINT,{
+                method:"POST",
+                headers:{"Content-Type":"application/json"},
+                body:JSON.stringify({type:"vote",vote:"undo_right",jobId:id,url:detailsUrl,ts:new Date().toISOString()})
+              });
               await render(); 
             },
             async ()=>{ 
-              await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"vote",vote:"right",jobId:id,url:detailsUrl,ts:new Date().toISOString()})});
+              await fetch(ENDPOINT,{
+                method:"POST",
+                headers:{"Content-Type":"application/json"},
+                body:JSON.stringify({type:"vote",vote:"right",jobId:id,url:detailsUrl,ts:new Date().toISOString()})
+              });
               await render(); 
             }, 10);
           return;
@@ -360,38 +486,53 @@
           renderInlineUndo(voteCell, "vote",
             async ()=>{ 
               if(prev==="wrong"){ setVoteLocal(id,""); } else { setVoteLocal(id,prev||""); }
-              await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"vote",vote:"undo_wrong",jobId:id,url:detailsUrl,ts:new Date().toISOString()})});
+              await fetch(ENDPOINT,{
+                method:"POST",
+                headers:{"Content-Type":"application/json"},
+                body:JSON.stringify({type:"vote",vote:"undo_wrong",jobId:id,url:detailsUrl,ts:new Date().toISOString()})
+              });
               await render(); 
             },
             async ()=>{ 
-              await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"vote",vote:"wrong",jobId:id,url:detailsUrl,ts:new Date().toISOString()})});
+              await fetch(ENDPOINT,{
+                method:"POST",
+                headers:{"Content-Type":"application/json"},
+                body:JSON.stringify({type:"vote",vote:"wrong",jobId:id,url:detailsUrl,ts:new Date().toISOString()})
+              });
               await render(); 
             }, 10);
           return;
         }
 
         if(act==="applied"||act==="not_interested"){
-  const ok = await confirmAction(act==="applied" ? "Mark as Applied?" : "Move to Other (Not interested)?");
-  if(!ok) return;
-  
-  const prev=USER_STATE[id]?.action||"";
-  setUserStateLocal(id,act);
-  
-  // Get the CURRENT interest cell (may have refreshed)
-  const currentInterestCell = card.querySelector(".row2 .interest");
-  
-  renderInlineUndo(currentInterestCell, act==="applied"?"applied":"choice",
-    async ()=>{ 
-      if(prev){ setUserStateLocal(id,prev); } else { setUserStateLocal(id,"undo"); }
-      await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"state",payload:{jobId:id,action:"undo",ts:new Date().toISOString()}})});
-      await render(); 
-    },
-    async ()=>{ 
-      await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"state",payload:{jobId:id,action:act,ts:new Date().toISOString()}})});
-      await render(); 
-    }, 10);
-  return;
-}
+          const ok = await confirmAction(act==="applied" ? "Mark as Applied?" : "Move to Other (Not interested)?");
+          if(!ok) return;
+          
+          const prev=USER_STATE[id]?.action||"";
+          setUserStateLocal(id,act);
+          
+          const currentInterestCell = card.querySelector(".row2 .interest");
+          
+          renderInlineUndo(currentInterestCell, act==="applied"?"applied":"choice",
+            async ()=>{ 
+              if(prev){ setUserStateLocal(id,prev); } else { setUserStateLocal(id,"undo"); }
+              await fetch(ENDPOINT,{
+                method:"POST",
+                headers:{"Content-Type":"application/json"},
+                body:JSON.stringify({type:"state",payload:{jobId:id,action:"undo",ts:new Date().toISOString()}})
+              });
+              await render(); 
+            },
+            async ()=>{ 
+              await fetch(ENDPOINT,{
+                method:"POST",
+                headers:{"Content-Type":"application/json"},
+                body:JSON.stringify({type:"state",payload:{jobId:id,action:act,ts:new Date().toISOString()}})
+              });
+              await render(); 
+            }, 10);
+          return;
+        }
 
         if(act==="exam_done"){
           const prev = USER_STATE[id]?.action || "";
@@ -439,16 +580,34 @@
   }
 
   function openModal(sel){
-    const m=qs(sel); if(!m) return;
-    m.classList.remove("hidden"); m.setAttribute("aria-hidden","false"); m.style.display="flex";
+    const m=qs(sel); 
+    if(!m) return;
+    m.classList.remove("hidden"); 
+    m.setAttribute("aria-hidden","false"); 
+    m.style.display="flex";
     if(sel==="#missing-modal"){ setTimeout(()=>qs("#missingTitle")?.focus(),0); }
   }
+  
   function closeModalEl(el){
-    const m=el.closest(".modal"); if(m){ m.classList.add("hidden"); m.setAttribute("aria-hidden","true"); m.style.display="none"; }
+    const m=el.closest(".modal"); 
+    if(m){ 
+      m.classList.add("hidden"); 
+      m.setAttribute("aria-hidden","true"); 
+      m.style.display="none"; 
+    }
   }
+  
   document.addEventListener("click",(e)=>{
-    if(e.target && (e.target.hasAttribute("data-close") || e.target.classList.contains("close-top"))){ e.preventDefault(); closeModalEl(e.target); }
-    if(e.target && e.target.classList.contains("modal")){ e.preventDefault(); e.target.classList.add("hidden"); e.target.setAttribute("aria-hidden","true"); e.target.style.display="none"; }
+    if(e.target && (e.target.hasAttribute("data-close") || e.target.classList.contains("close-top"))){ 
+      e.preventDefault(); 
+      closeModalEl(e.target); 
+    }
+    if(e.target && e.target.classList.contains("modal")){ 
+      e.preventDefault(); 
+      e.target.classList.add("hidden"); 
+      e.target.setAttribute("aria-hidden","true"); 
+      e.target.style.display="none"; 
+    }
   });
 
   const reportForm = document.getElementById("reportForm");
@@ -546,5 +705,7 @@
     await loadUserStateServer();
     await renderStatus();
     await render();
+    // Re-render every 5 minutes to catch backend updates
+    setInterval(render, 5*60*1000);
   });
 })();

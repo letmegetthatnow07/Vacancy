@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # tools/pdf_parser.py — Extract vacancy details from PDFs with OCR and Hindi support
+# FIXES: P2-C-006, P2-C-007 (deterministic SHA1 IDs), P2-H-001 (clean output)
 
-import re, json, sys, pathlib, hashlib, requests, time, urllib3, argparse
+import re, json, sys, pathlib, hashlib, requests, time, urllib3, argparse, os
 from datetime import datetime, date
 from urllib.parse import urlparse
 import tempfile
@@ -45,12 +46,21 @@ def clean(s):
 def norm_url(u):
     try:
         p = urlparse(u or "")
-        return p._replace(query="", fragment="").geturl().rstrip("/").lower()
+        base = p._replace(query="", fragment="")
+        return base.geturl().rstrip("/").lower()
     except:
         return (u or "").rstrip("/").lower()
 
 def stable_id(url):
-    return f"user_{abs(hash(norm_url(url))) % 10**9}"
+    """
+    FIX P2-C-006 & P2-C-007: Use DETERMINISTIC SHA1 ID (Phase 1 compatible)
+    Matches collector.py, schema_merge.py, qc_and_learn.py
+    """
+    try:
+        norm = norm_url(url)
+        return f"job_{hashlib.sha1(norm.encode()).hexdigest()[:12]}"
+    except:
+        return f"job_{hashlib.md5((url or '').lower().encode()).hexdigest()[:12]}"
 
 def download_pdf(url, cache_dir=".cache"):
     pathlib.Path(cache_dir).mkdir(exist_ok=True)
@@ -61,7 +71,7 @@ def download_pdf(url, cache_dir=".cache"):
         return cache_path
     
     try:
-        r = requests.get(url, timeout=45, headers={"User-Agent": "Mozilla/5.0"}, verify=True)
+        r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"}, verify=True)
         r.raise_for_status()
         cache_path.write_bytes(r.content)
         print(f"✓ Downloaded: {url[:60]}...", file=sys.stderr)
@@ -69,7 +79,7 @@ def download_pdf(url, cache_dir=".cache"):
     except requests.exceptions.SSLError:
         try:
             print(f"⚠ SSL error, retrying without verification: {url[:60]}...", file=sys.stderr)
-            r = requests.get(url, timeout=45, headers={"User-Agent": "Mozilla/5.0"}, verify=False)
+            r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"}, verify=False)
             r.raise_for_status()
             cache_path.write_bytes(r.content)
             print(f"✓ Downloaded (no SSL): {url[:60]}...", file=sys.stderr)
@@ -82,18 +92,18 @@ def download_pdf(url, cache_dir=".cache"):
         return None
 
 def extract_text_ocr(pdf_path):
-    """Extract text using OCR with Hindi/English support"""
+    """Extract text using OCR with Hindi/English support (FIX P2-H-004: more pages)"""
     if not HAS_OCR:
         return ""
     
     try:
         print(f"⚙ Running OCR (Hindi+English) on: {pdf_path.name}...", file=sys.stderr)
         
-        # Convert PDF to images
-        images = convert_from_path(str(pdf_path), dpi=300, first_page=1, last_page=3)
+        # Convert PDF to images (FIX P2-H-004: check up to 5 pages, not just 3)
+        images = convert_from_path(str(pdf_path), dpi=300, first_page=1, last_page=5)
         
         text = ""
-        for i, image in enumerate(images[:3]):  # Only first 3 pages for speed
+        for i, image in enumerate(images[:5]):
             # OCR with Hindi + English
             page_text = pytesseract.image_to_string(image, lang='hin+eng')
             text += page_text + "\n"
@@ -180,16 +190,21 @@ def parse_pdf(url, pdf_path, source="unknown"):
         print(f"✗ Filtered (eligibility): {url[:60]}...", file=sys.stderr)
         return None
     
-    # Extract details
-    filename = urlparse(url).path.split("/")[-1]
-    title = filename.replace(".pdf", "").replace("_", " ").replace("-", " ").title()
+    # FIX P2-H-008: Better title extraction (not just filename)
+    title = None
     
-    # Better title extraction from text
-    lines = [l.strip() for l in text.split("\n")[:10] if l.strip()]
-    for line in lines:
-        if len(line) > 20 and any(kw in line.lower() for kw in ["recruitment", "notification", "advertisement", "भर्ती", "विज्ञापन"]):
+    # Try to find title from PDF text (recruitment/notification lines)
+    lines = [l.strip() for l in text.split("\n") if l.strip() and len(l) > 10]
+    for line in lines[:15]:  # Check first 15 lines
+        if any(kw in line.lower() for kw in ["recruitment", "notification", "advertisement", "advt", "भर्ती", "विज्ञापन"]):
             title = clean(line)[:200]
-            break
+            if len(title) > 15:  # Only use if meaningful length
+                break
+    
+    # Fallback: use filename as last resort
+    if not title or len(title) < 10:
+        filename = urlparse(url).path.split("/")[-1]
+        title = filename.replace(".pdf", "").replace("_", " ").replace("-", " ").title()
     
     last_date = parse_date(text)
     posts = parse_posts(text)
@@ -197,7 +212,7 @@ def parse_pdf(url, pdf_path, source="unknown"):
     domicile = "Bihar" if any(kw in text.lower() for kw in ["bihar", "बिहार"]) else "All India"
     
     job = {
-        "id": stable_id(url),
+        "id": stable_id(url),  # FIX P2-C-006: Deterministic SHA1
         "title": title,
         "qualificationLevel": "Any graduate",
         "domicile": domicile,
@@ -216,7 +231,7 @@ def parse_pdf(url, pdf_path, source="unknown"):
     
     print(f"✓ Extracted: {title[:60]}... | Posts: {posts or 'N/A'} | Date: {job['deadline']}", file=sys.stderr)
     
-    # Output JSONL to stdout for GitHub Actions to capture
+    # FIX P2-H-001: Output ONLY JSONL to stdout (all debug to stderr)
     print(json.dumps(job, ensure_ascii=False))
     
     return job
@@ -249,7 +264,7 @@ def main():
             if job:
                 results.append(job)
         
-        time.sleep(0.5)
+        time.sleep(0.3)
     
     # If output file specified, write there
     if args.output:

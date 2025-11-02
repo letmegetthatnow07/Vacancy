@@ -106,12 +106,12 @@
   "functions": {
     "api/scrape-jobs.py": {
       "runtime": "python3.11",
-      "maxDuration": 60,
-      "memory": 512,
+      "maxDuration": 300,
+      "memory": 1024,
       "includeFiles": [
         "rules.json",
-        "sources/**",
-        "tools/**"
+        "tools/**",
+        "sources/**"
       ],
       "excludeFiles": [
         ".git/**",
@@ -136,7 +136,10 @@
   ],
   "env": {
     "GITHUB_TOKEN": "@GITHUB_TOKEN",
-    "GITHUB_REPO": "@GITHUB_REPO"
+    "GITHUB_REPO": "@GITHUB_REPO",
+    "CLOUDFLARE_KV_ACCOUNT_ID": "@CLOUDFLARE_KV_ACCOUNT_ID",
+    "CLOUDFLARE_KV_API_TOKEN": "@CLOUDFLARE_KV_API_TOKEN",
+    "CLOUDFLARE_KV_NAMESPACE_ID": "@CLOUDFLARE_KV_NAMESPACE_ID"
   },
   "github": {
     "enabled": true,

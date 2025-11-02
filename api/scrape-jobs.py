@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 # api/scrape-jobs.py - Vercel serverless scraper (COMPLETE FIX)
-# Fixes: Path handling, file I/O, KV headers, error reporting
+# FIX: Download user_state from KV → write to local file → pass to GitHub Actions
 
 import json
 import os
 import subprocess
 import sys
 import requests
-from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 class handler(BaseHTTPRequestHandler):
@@ -15,7 +14,6 @@ class handler(BaseHTTPRequestHandler):
         """Triggered by Vercel cron - runs full Phase 1 pipeline"""
         
         try:
-            # Get project root (working directory)
             project_root = os.getcwd()
             print(f"[INFO] Project root: {project_root}", file=sys.stderr)
             
@@ -31,6 +29,45 @@ class handler(BaseHTTPRequestHandler):
                         'file': req_file,
                         'path': full_path
                     }, 500)
+            
+            # ===== STEP 0: Download user_state from Cloudflare KV =====
+            print("[STEP 0] Fetching user_state from Cloudflare KV...", file=sys.stderr)
+            
+            kv_account = os.environ.get('CLOUDFLARE_KV_ACCOUNT_ID')
+            kv_token = os.environ.get('CLOUDFLARE_KV_API_TOKEN')
+            kv_namespace = os.environ.get('CLOUDFLARE_KV_NAMESPACE_ID')
+            
+            user_state_data = {}
+            
+            if kv_account and kv_token and kv_namespace:
+                try:
+                    kv_url = f"https://api.cloudflare.com/client/v4/accounts/{kv_account}/storage/kv/namespaces/{kv_namespace}/values/user_state_personal.json"
+                    
+                    kv_response = requests.get(
+                        kv_url,
+                        headers={'Authorization': f"Bearer {kv_token}"},
+                        timeout=15
+                    )
+                    
+                    if kv_response.ok:
+                        user_state_data = kv_response.json()
+                        print(f"[OK] Downloaded user_state from KV: {len(user_state_data)} entries", file=sys.stderr)
+                    else:
+                        print(f"[WARN] KV fetch returned {kv_response.status_code} - using empty state", file=sys.stderr)
+                
+                except Exception as e:
+                    print(f"[WARN] KV fetch failed: {e} - using empty state", file=sys.stderr)
+            else:
+                print("[WARN] Missing KV credentials - using empty user_state", file=sys.stderr)
+            
+            # Write user_state to local file for GitHub Actions
+            user_state_path = os.path.join(project_root, 'user_state.json')
+            try:
+                with open(user_state_path, 'w', encoding='utf-8') as f:
+                    json.dump(user_state_data, f, indent=2, ensure_ascii=False)
+                print(f"[OK] Wrote user_state to {user_state_path}", file=sys.stderr)
+            except Exception as e:
+                print(f"[WARN] Writing user_state failed: {e}", file=sys.stderr)
             
             # ===== STEP 1: Run Collector =====
             print("[STEP 1] Running collector...", file=sys.stderr)
@@ -87,7 +124,6 @@ class handler(BaseHTTPRequestHandler):
             
             if merge_result.returncode != 0:
                 print(f"[WARN] Schema merge returned non-zero: {merge_result.stderr}", file=sys.stderr)
-                # Don't fail - merge can have warnings
             
             print(f"[OK] Schema merge: {merge_result.stderr[:200]}", file=sys.stderr)
             
@@ -128,14 +164,7 @@ class handler(BaseHTTPRequestHandler):
             # ===== STEP 5: Save to Cloudflare KV =====
             print("[STEP 5] Saving to Cloudflare KV...", file=sys.stderr)
             
-            kv_account = os.environ.get('CLOUDFLARE_KV_ACCOUNT_ID')
-            kv_token = os.environ.get('CLOUDFLARE_KV_API_TOKEN')
-            kv_namespace = os.environ.get('CLOUDFLARE_KV_NAMESPACE_ID')
-            
-            if not (kv_account and kv_token and kv_namespace):
-                print("[WARN] Missing KV credentials - skipping KV save", file=sys.stderr)
-                kv_saved = False
-            else:
+            if kv_account and kv_token and kv_namespace:
                 try:
                     kv_url = f"https://api.cloudflare.com/client/v4/accounts/{kv_account}/storage/kv/namespaces/{kv_namespace}/values/data.json"
                     
@@ -157,6 +186,9 @@ class handler(BaseHTTPRequestHandler):
                 except Exception as e:
                     print(f"[ERROR] KV save exception: {e}", file=sys.stderr)
                     kv_saved = False
+            else:
+                print("[WARN] Missing KV credentials - skipping KV save", file=sys.stderr)
+                kv_saved = False
             
             # ===== STEP 6: Trigger GitHub OCR Workflow (if PDFs found) =====
             print("[STEP 6] Checking for PDFs to process...", file=sys.stderr)
@@ -222,6 +254,7 @@ class handler(BaseHTTPRequestHandler):
                 'merged': True,
                 'qc_passed': True,
                 'stored_in_kv': kv_saved,
+                'user_state_synced': bool(user_state_data),
                 'pdf_count': len(pdf_jobs),
                 'pdf_dispatch': pdf_triggered,
                 'timestamp': __import__('datetime').datetime.utcnow().isoformat() + 'Z'
@@ -251,3 +284,6 @@ class handler(BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
+
+# Missing import fix
+from http.server import BaseHTTPRequestHandler

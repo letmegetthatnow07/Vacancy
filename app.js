@@ -362,7 +362,7 @@
     const my=++TOKEN;
 
     loadVotesLocal();
-    loadUserStateLocal();
+    // loadUserStateLocal() already called in loadUserStateServer()
 
     let data=null;
     try{ 

@@ -9,8 +9,8 @@ routes = [
 
 [[kv_namespaces]]
 binding = "VAC_STATE"
-id = "your_kv_namespace_id"  # Get from Cloudflare Dashboard
-preview_id = "your_kv_preview_namespace_id"
+id = "a94cf67775784b06836ba86566b9ca46"  # Get from Cloudflare Dashboard
+preview_id = "a94cf67775784b06836ba86566b9ca46"
 
 [env.production.vars]
 # PRODUCTION ENDPOINTS (UPDATE THESE)

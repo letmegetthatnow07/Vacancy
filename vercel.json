@@ -110,16 +110,6 @@
       "memory": 1024
     }
   },
-  "crons": [
-    {
-      "path": "/api/scrape-jobs",
-      "schedule": "0 1 * * *"
-    },
-    {
-      "path": "/api/scrape-jobs",
-      "schedule": "0 13 * * *"
-    }
-  ],
   "env": {
     "GITHUB_TOKEN": "@GITHUB_TOKEN",
     "GITHUB_REPO": "@GITHUB_REPO",

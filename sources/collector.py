@@ -1,35 +1,17 @@
 #!/usr/bin/env python3
-# collector.py — COMPLETE HYBRID: All quality + All aggregator logic + All PDF extraction
-# FIX: Custom session with SSL context for strict Vercel environment
+# collector.py — COMPLETE HYBRID with CloudScraper for SSL bypass
+# Uses cloudscraper to handle SSL certificate verification issues
 
-import requests, json, sys, re, time, os, hashlib, pathlib
+import cloudscraper
+import json, sys, re, time, os, hashlib, pathlib
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 from collections import defaultdict
-import urllib3
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-from urllib3.poolmanager import PoolManager
-import ssl
 
-# Disable SSL warnings
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# Create cloudflare-aware scraper (handles SSL automatically!)
+scraper = cloudscraper.create_scraper()
 
-# Create custom SSL context that doesn't verify certificates
-class SSLAdapter(HTTPAdapter):
-    def init_poolmanager(self, *args, **kwargs):
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        kwargs['ssl_context'] = ctx
-        return super().init_poolmanager(*args, **kwargs)
-
-# Create session with custom adapter
-SESSION = requests.Session()
-SESSION.mount('https://', SSLAdapter())
-SESSION.mount('http://', HTTPAdapter())
-
-UA = {"User-Agent":"Mozilla/5.0"}
+UA = {"User-Agent": "Mozilla/5.0"}
 
 # Load rules.json
 try:
@@ -132,8 +114,8 @@ def extract_pdf_link(job_url, base_url):
         if not job_url or not isinstance(job_url, str):
             return None, False
         
-        # FIX: Use SESSION with custom SSL adapter
-        r = SESSION.get(job_url, timeout=15, headers=UA)
+        # FIX: Use cloudscraper instead of requests
+        r = scraper.get(job_url, timeout=15)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
         
@@ -146,17 +128,8 @@ def extract_pdf_link(job_url, base_url):
         
         return None, False
     
-    except requests.Timeout:
-        print(f"[TIMEOUT] extract_pdf_link: {job_url[:60]}", file=sys.stderr)
-        return None, False
-    except requests.exceptions.SSLError as e:
-        print(f"[SSL_ERR] extract_pdf_link {job_url[:60]}: {str(e)[:80]}", file=sys.stderr)
-        return None, False
-    except requests.ConnectionError:
-        print(f"[CONN_ERR] extract_pdf_link: {job_url[:60]}", file=sys.stderr)
-        return None, False
     except Exception as e:
-        print(f"[PDF_ERR] {job_url[:60]}: {type(e).__name__}: {str(e)[:80]}", file=sys.stderr)
+        print(f"[PDF_ERR] {job_url[:60]}: {type(e).__name__}", file=sys.stderr)
         return None, False
 
 def is_relevant(title):
@@ -179,8 +152,8 @@ def is_relevant(title):
 def fetch_site(url, selector):
     """Fetch jobs from a site"""
     try:
-        # FIX: Use SESSION with custom SSL adapter
-        r = SESSION.get(url, timeout=30, headers=UA)
+        # FIX: Use cloudscraper instead of requests
+        r = scraper.get(url, timeout=30)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
         
@@ -201,12 +174,6 @@ def fetch_site(url, selector):
         print(f"[FETCH_OK] {url[:50]}: found {len(jobs)} jobs", file=sys.stderr)
         return jobs
     
-    except requests.exceptions.SSLError as e:
-        print(f"[SSL_ERR] {url[:50]}: {str(e)[:80]}", file=sys.stderr)
-        return []
-    except requests.Timeout:
-        print(f"[TIMEOUT] {url[:50]}", file=sys.stderr)
-        return []
     except Exception as e:
         print(f"[FETCH_ERR] {url[:50]}: {type(e).__name__}", file=sys.stderr)
         return []

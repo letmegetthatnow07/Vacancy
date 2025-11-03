@@ -1,15 +1,14 @@
-// app.js v2025-11-02-fixed
-// FIXES: P3-W-C-003, P3-W-C-005, P3-W-C-007, P3-W-C-009, P3-W-H-005, P3-W-H-008
-// Cross-phase: Phase 1 applied_ids merged + Phase 2 SHA1 ID compatibility
+// app.js v2025-11-03-FIXED (Data.json endpoint + applied jobs)
+// FIXES: P3-W-C-010 (data.json endpoint), P3-W-C-003 (applied jobs)
 
 (function(){
   // FIX P3-W-C-001: Make ENDPOINT configurable (not hardcoded)
   const ENDPOINT = window.API_ENDPOINT || 
   (window.location.hostname === 'localhost' ? 'http://localhost:8787' : 
    'https://vacancy.animeshkumar97.workers.dev');
-// Works for: GitHub Pages + Vercel + localhost
-// GitHub Pages URL: https://letmegetthatnow07.github.io/Vacancy/
-// Same ENDPOINT, no change needed! ✅
+
+  // FIX P3-W-C-010: Correct data.json URL (from Cloudflare Worker KV, NOT Worker endpoint)
+  const DATA_URL = 'https://vacancy.animeshkumar97.workers.dev/data.json';
   
   const qs=(s,r)=>(r||document).querySelector(s);
   const qsa=(s,r)=>Array.from((r||document).querySelectorAll(s));
@@ -48,7 +47,9 @@
 
   async function renderStatus(){
     try{
-      const r=await fetch(bust("health.json"),{cache:"no-store"}); 
+      // FIX: Also fetch health from correct location
+      const healthUrl = 'https://vacancy.animeshkumar97.workers.dev/health.json';
+      const r=await fetch(bust(healthUrl),{cache:"no-store"}); 
       if(!r.ok) throw 0;
       const h=await r.json();
       const pill=qs("#health-pill");
@@ -112,7 +113,7 @@
     
     // FIX P3-W-C-003: ALSO load Phase 1 applied_ids from data.json
     try{
-      const dataResp=await fetch(bust("data.json"),{cache:"no-store"}); 
+      const dataResp=await fetch(bust(DATA_URL),{cache:"no-store"}); 
       if(dataResp.ok){
         const data=await dataResp.json();
         const appliedFromPhase1 = data.sections?.applied || [];
@@ -366,10 +367,12 @@
 
     let data=null;
     try{ 
-      const r=await fetch(bust(ENDPOINT+"/data.json"),{cache:"no-store"});
+      // FIX P3-W-C-010: Use correct DATA_URL (from Cloudflare Worker KV)
+      const r=await fetch(bust(DATA_URL),{cache:"no-store"});
       if(!r.ok) throw 0; 
       data=await r.json(); 
-    }catch{ 
+    }catch(err){ 
+      console.error("Failed to fetch data.json:", err);
       data=null; 
     }
     if(my!==TOKEN) return;

@@ -178,10 +178,14 @@ def handler(request):
             try:
                 kv_url = f"https://api.cloudflare.com/client/v4/accounts/{kv_account}/storage/kv/namespaces/{kv_namespace}/values/data.json"
                 
+                # FIX: Use proper JSON encoding (not bytes)
                 kv_response = requests.put(
                     kv_url,
-                    data=data_content.encode('utf-8'),
-                    headers={'Authorization': f"Bearer {kv_token}"},
+                    headers={
+                        'Authorization': f"Bearer {kv_token}",
+                        'Content-Type': 'application/json'
+                    },
+                    json=data_obj,  # ✅ CHANGED: Use json= instead of data=
                     timeout=30
                 )
                 
@@ -195,6 +199,38 @@ def handler(request):
                 print(f"[ERROR] KV save exception: {e}", file=sys.stderr)
         else:
             print("[WARN] Missing KV credentials - skipping KV save", file=sys.stderr)
+        
+        # ===== STEP 5b: Also save health.json =====
+        print("[STEP 5b] Saving health.json to Cloudflare KV...", file=sys.stderr)
+        
+        if kv_account and kv_token and kv_namespace:
+            try:
+                health_data = {
+                    'ok': True,
+                    'totalListings': job_count,
+                    'lastUpdated': datetime.utcnow().isoformat() + 'Z',
+                    'appliedCount': len([j for j in data_obj.get('jobListings', []) if j.get('id') in data_obj.get('sections', {}).get('applied', [])])
+                }
+                
+                kv_url = f"https://api.cloudflare.com/client/v4/accounts/{kv_account}/storage/kv/namespaces/{kv_namespace}/values/health.json"
+                
+                health_response = requests.put(
+                    kv_url,
+                    headers={
+                        'Authorization': f"Bearer {kv_token}",
+                        'Content-Type': 'application/json'
+                    },
+                    json=health_data,  # ✅ Use json= for proper encoding
+                    timeout=30
+                )
+                
+                if health_response.ok:
+                    print(f"[OK] Health saved to KV: {health_response.status_code}", file=sys.stderr)
+                else:
+                    print(f"[WARN] Health save failed: {health_response.status_code}", file=sys.stderr)
+            
+            except Exception as e:
+                print(f"[WARN] Health save exception: {e}", file=sys.stderr)
         
         # Cleanup temp files
         try:

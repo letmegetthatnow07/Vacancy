@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# qc_and_learn.py v2025-11-02-WITH-ELIGIBILITY-MODULE
-# FIXES: C-003 (comprehensive eligibility), H-001 (applied protection), H-002 (exam_done)
+# qc_and_learn.py v2025-11-03-FIXED (Applied Jobs Inclusion)
+# FIXES: C-003, H-001, H-002 + applied job preservation
 
 import json, pathlib, re, argparse, urllib.parse, os, sys
 from datetime import datetime, timedelta, date, timezone
@@ -440,6 +440,29 @@ for j in jobs:
     jid = j.get("id")
     h = host(j.get("applyLink"))
 
+    # FIX H-001 + H-002: Check applied status FIRST (protection before filtering)
+    if jid in applied_ids:
+        # NEVER filter applied jobs (even if expired!)
+        # But check if should be archived (exam_done >7 days)
+        if jid in user_state:
+            state_rec = user_state.get(jid)
+            if state_rec and state_rec.get("action") == "exam_done":
+                # Check if marked for archival
+                if state_rec.get("should_archive"):
+                    j.setdefault("flags",{})["removed_reason"]="auto_archived_exam_done_7d"
+                    j.setdefault("flags",{})["archived_reason"]="exam_done_7d_expired"
+                    archived.append(j)
+                    archived_exam_done += 1
+                    print(f"[QC] Archiving applied job (exam_done >7d): {jid[:16]}", file=sys.stderr)
+                    continue
+        
+        # Keep applied job in primary (NEVER filter!)
+        primary.append(j)
+        print(f"[QC] Keeping applied job: {jid[:16]} - {j.get('title', '')[:50]}", file=sys.stderr)
+        continue
+
+    # ===== For non-applied jobs: apply eligibility checks =====
+    
     # FIX C-003: Check eligibility using comprehensive module
     is_eligible_result, reason = check_eligibility(j)
     if not is_eligible_result:
@@ -462,6 +485,7 @@ for j in jobs:
         j.setdefault("flags",{})["removed_reason"] = f"auto_filtered_{reason}"
         j.setdefault("flags",{})["auto_filtered"] = reason
         archived.append(j)
+        print(f"[QC] Filtering: {j.get('title', '')[:50]} ({reason})", file=sys.stderr)
         continue
 
     if matches_non_vacancy_pattern(h, j.get("title",""), j.get("applyLink","")):
@@ -508,26 +532,7 @@ for j in jobs:
         if c:
             j["numberOfPosts"]=c
 
-    # FIX H-001 + H-002: Check applied status FIRST (protection)
-    if jid in applied_ids:
-        # NEVER filter applied jobs (even if expired!)
-        # But check if should be archived (exam_done >7 days)
-        if jid in user_state:
-            state_rec = user_state.get(jid)
-            if state_rec and state_rec.get("action") == "exam_done":
-                # Check if marked for archival
-                if state_rec.get("should_archive"):
-                    j.setdefault("flags",{})["removed_reason"]="auto_archived_exam_done_7d"
-                    j.setdefault("flags",{})["archived_reason"]="exam_done_7d_expired"
-                    archived.append(j)
-                    archived_exam_done += 1
-                    continue
-        
-        # Keep applied job (no filtering!)
-        primary.append(j)
-        continue
-
-    # KEEP all jobs (don't remove for expired deadline!)
+    # KEEP all non-archived jobs (don't remove for expired deadline!)
     if last and last < today:
         other.append(j)
     else:
@@ -575,11 +580,12 @@ transp.update({
     }
 })
 
+# ===== CRITICAL FIX: Include applied jobs IN jobListings + IDs in sections =====
 out = {
-    "jobListings": primary+other,
+    "jobListings": primary+other,  # ✅ ALL jobs (applied + primary + other)
     "archivedListings": archived,
     "sections": {
-        "applied": applied_ids,
+        "applied": applied_ids,  # ✅ IDs for quick lookup
         "other": other_marked_ids,
         "primary": [j.get("id") for j in primary if j.get("id") not in applied_ids]
     },

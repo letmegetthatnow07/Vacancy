@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "echo 'No build needed - static files only'",
+  "buildCommand": "pip install -q cloudscraper requests beautifulsoup4 lxml python-dateutil && echo 'Python deps installed'",
   "outputDirectory": ".",
   "public": true,
   "headers": [
@@ -107,7 +107,8 @@
     "api/scrape-jobs.py": {
       "runtime": "python3.11",
       "maxDuration": 300,
-      "memory": 1024
+      "memory": 1024,
+      "includeFiles": "tools/**,*.json"
     }
   },
   "env": {

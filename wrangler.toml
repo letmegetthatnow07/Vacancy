@@ -2,10 +2,11 @@ name = "vacancy-worker"
 main = "src/worker.js"
 compatibility_date = "2025-11-01"
 
-# ===== CRON TRIGGERS (NEW) =====
+# ===== CRON TRIGGERS - THE FIX =====
 [triggers]
 # 7:00 AM IST = 1:30 AM UTC
-# 7:00 PM IST = 1:30 PM UTC
+# 7:00 PM IST = 1:30 PM UTC  
+# These MUST be UTC times, NOT IST
 crons = ["30 1 * * *", "30 13 * * *"]
 
 [env.production]
@@ -13,11 +14,13 @@ routes = [
   { pattern = "vacancy.animeshkumar97.workers.dev/*", zone_name = "workers.dev" }
 ]
 
+# ===== KV NAMESPACE BINDING =====
 [[kv_namespaces]]
 binding = "VAC_STATE"
 id = "a94cf67775784b06836ba86566b9ca46"
 preview_id = "a94cf67775784b06836ba86566b9ca46"
 
+# ===== ENVIRONMENT VARIABLES =====
 [env.production.vars]
 VERCEL_APP_URL = "https://vacancy-kappa.vercel.app"
 ALLOWED_ORIGINS = '["https://letmegetthatnow07.github.io", "https://vacancy-kappa.vercel.app"]'

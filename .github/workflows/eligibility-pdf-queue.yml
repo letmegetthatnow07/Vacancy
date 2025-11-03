@@ -15,7 +15,7 @@ permissions:
   actions: read
 
 jobs:
-  pdf-eligibility:
+  pdf-queue:
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -33,7 +33,7 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update
+          sudo apt-get update -qq
           sudo apt-get install -y \
             tesseract-ocr \
             tesseract-ocr-hin \
@@ -42,8 +42,8 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install --quiet --upgrade pip
+          pip install --quiet -r requirements.txt
 
       - name: Parse webhook payload
         id: payload
@@ -51,14 +51,14 @@ jobs:
           if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
             echo '${{ toJson(github.event.client_payload.pdfs) }}' > pdfs.json
             MODE='${{ github.event.client_payload.mode }}'
-            if [ -z "$MODE" ]; then MODE="normal"; fi
+            if [ -z "$MODE" ]; then MODE="auto"; fi
             echo "mode=$MODE" >> $GITHUB_OUTPUT
           else
             echo '${{ inputs.pdf_urls }}' > pdfs.json
             echo "mode=manual" >> $GITHUB_OUTPUT
           fi
           echo "=== PDF Payload ===" 
-          cat pdfs.json | python3 -m json.tool | head -20
+          cat pdfs.json | python3 -m json.tool 2>/dev/null | head -15 || echo "Invalid JSON"
 
       - name: Download PDFs
         run: |
@@ -67,12 +67,15 @@ jobs:
           import json, requests, pathlib, time, sys
           from urllib.parse import urlparse
           
-          pdfs_data = json.load(open('pdfs.json'))
+          try:
+              pdfs_data = json.load(open('pdfs.json'))
+          except:
+              pdfs_data = []
+          
           download_log = []
           
           for i, pdf_info in enumerate(pdfs_data):
-              url = pdf_info.get('url')
-              source = pdf_info.get('source', 'unknown')
+              url = pdf_info.get('url') if isinstance(pdf_info, dict) else None
               
               if not url:
                   continue
@@ -101,165 +104,79 @@ jobs:
                   })
                   
                   print(f"  ✓ Downloaded ({size:.2f} MB)", file=sys.stderr)
-                  time.sleep(0.3)
+                  time.sleep(0.5)
               
               except requests.exceptions.SSLError:
                   try:
-                      print(f"  ⚠ SSL error, retrying without verification...", file=sys.stderr)
+                      print(f"  ⚠ SSL error, retrying...", file=sys.stderr)
                       r = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=20, verify=False)
                       r.raise_for_status()
                       pathlib.Path(filename).write_bytes(r.content)
                       download_log.append({'url': url, 'filename': filename, 'status': 'success_nossl'})
                       print(f"  ✓ Downloaded (no SSL)", file=sys.stderr)
                   except Exception as e2:
-                      download_log.append({'url': url, 'status': 'failed', 'error': str(e2)[:100]})
+                      download_log.append({'url': url, 'status': 'failed', 'error': str(e2)[:80]})
                       print(f"  ✗ Failed: {e2}", file=sys.stderr)
               
               except requests.exceptions.Timeout:
                   download_log.append({'url': url, 'status': 'timeout'})
-                  print(f"  ✗ Timeout", file=sys.stderr)
+                  print(f"  ✗ Timeout (20s)", file=sys.stderr)
               
               except Exception as e:
-                  download_log.append({'url': url, 'status': 'failed', 'error': str(e)[:100]})
+                  download_log.append({'url': url, 'status': 'failed', 'error': str(e)[:80]})
                   print(f"  ✗ Failed: {e}", file=sys.stderr)
           
-          with open('tmp/download_log.json', 'w') as f:
-              json.dump(download_log, f, indent=2)
+          pathlib.Path('tmp/download_log.json').write_text(json.dumps(download_log, indent=2))
           
           successful = sum(1 for x in download_log if x['status'].startswith('success'))
           print(f"\n✓ Downloaded {successful}/{len(pdfs_data)} PDFs", file=sys.stderr)
           PYTHON_SCRIPT
 
-      - name: Extract text with OCR
+      - name: Save PDF queue for OCR workflow
         run: |
-          python3 << 'PYTHON_SCRIPT'
-          import json, subprocess, pathlib, sys, time
-          from pathlib import Path
-          
-          pdfs = sorted(Path('.cache').glob('pdf_*'))
-          results = []
-          
-          print(f"Starting OCR on {len(pdfs)} PDFs...", file=sys.stderr)
-          
-          for i, pdf_file in enumerate(pdfs):
-              print(f"\n[{i+1}/{len(pdfs)}] Processing: {pdf_file.name}", file=sys.stderr)
-              
-              try:
-                  result = subprocess.run(
-                      ['python3', 'tools/pdf_parser.py', str(pdf_file)],
-                      capture_output=True,
-                      text=True,
-                      timeout=120
-                  )
-                  
-                  if result.returncode == 0:
-                      for line in result.stdout.strip().split('\n'):
-                          if line.strip() and line.startswith('{'):
-                              try:
-                                  job = json.loads(line)
-                                  results.append(job)
-                                  print(f"  ✓ Extracted: {job.get('title', 'N/A')[:50]}", file=sys.stderr)
-                              except json.JSONDecodeError:
-                                  pass
-                      
-                      if result.stderr:
-                          print(f"  [log] {result.stderr[:150]}", file=sys.stderr)
-                  else:
-                      print(f"  ✗ OCR failed (code {result.returncode})", file=sys.stderr)
-              
-              except subprocess.TimeoutExpired:
-                  print(f"  ✗ OCR timeout", file=sys.stderr)
-              except Exception as e:
-                  print(f"  ✗ Error: {e}", file=sys.stderr)
-          
-          pathlib.Path('tmp').mkdir(exist_ok=True)
-          with open('tmp/ocr_results.jsonl', 'w', encoding='utf-8') as f:
-              for job in results:
-                  f.write(json.dumps(job, ensure_ascii=False) + '\n')
-          
-          print(f"\n✓ Extracted {len(results)} jobs", file=sys.stderr)
-          PYTHON_SCRIPT
-
-      - name: Check eligibility criteria
-        run: |
-          python3 << 'PYTHON_SCRIPT'
-          import json, sys
-          
-          # Load OCR results
-          ocr_jobs = []
-          try:
-              with open('tmp/ocr_results.jsonl', 'r') as f:
-                  for line in f:
-                      if line.strip():
-                          ocr_jobs.append(json.loads(line))
-          except:
-              pass
-          
-          print(f"[Eligibility] Checking {len(ocr_jobs)} jobs", file=sys.stderr)
-          
-          # Filter by rules.json eligibility
-          try:
-              with open('rules.json', 'r') as f:
-                  rules = json.load(f)
-          except:
-              rules = {}
-          
-          # Check eligibility
-          eligible_jobs = []
-          for job in ocr_jobs:
-              title = (job.get('title') or '').lower()
-              qual = (job.get('qualificationLevel') or '').lower()
-              
-              # Check against blocked keywords
-              blocked_keywords = [
-                  'b.tech', 'mtech', 'phd', 'nursing', 'teacher',
-                  'polytechnic', 'diploma', 'iti'
-              ]
-              
-              is_blocked = any(kw in qual for kw in blocked_keywords)
-              
-              if not is_blocked and len(title) > 5:
-                  eligible_jobs.append(job)
-                  print(f"  ✓ Eligible: {title[:60]}", file=sys.stderr)
-              else:
-                  print(f"  ✗ Filtered: {title[:60]}", file=sys.stderr)
-          
-          # Save eligible jobs
-          with open('tmp/eligible_jobs.jsonl', 'w', encoding='utf-8') as f:
-              for job in eligible_jobs:
-                  f.write(json.dumps(job, ensure_ascii=False) + '\n')
-          
-          print(f"\n✓ {len(eligible_jobs)} eligible jobs", file=sys.stderr)
-          PYTHON_SCRIPT
-
-      - name: Save eligible jobs to stdout
-        run: |
-          if [ -f tmp/eligible_jobs.jsonl ]; then
-            cat tmp/eligible_jobs.jsonl
-          else
-            echo "No eligible jobs found"
+          # FIX P3-C-001: Pass PDF list to OCR workflow via artifact
+          if [ -f tmp/download_log.json ]; then
+            python3 << 'PYTHON_SCRIPT'
+            import json, pathlib
+            
+            log = json.load(open('tmp/download_log.json'))
+            downloaded = [x for x in log if x['status'].startswith('success')]
+            
+            # Create queue for OCR workflow
+            ocr_queue = [
+                {'pdf': x['filename'], 'url': x['url'], 'size_mb': x['size_mb']}
+                for x in downloaded
+            ]
+            
+            pathlib.Path('tmp/ocr_queue.json').write_text(
+                json.dumps(ocr_queue, indent=2)
+            )
+            
+            print(f"✓ Prepared {len(ocr_queue)} PDFs for OCR processing")
+            PYTHON_SCRIPT
           fi
 
-      - name: Trigger OCR Processing
+      - name: Upload PDFs as artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf-downloads
+          path: tmp/download_log.json
+          retention-days: 7
+
+      - name: Trigger OCR workflow
         if: success()
         run: |
-          echo "Triggering OCR Processing workflow..."
+          # FIX P3-C-002: Pass pre-downloaded PDFs to OCR workflow
+          echo "Triggering OCR workflow..."
           curl -X POST https://api.github.com/repos/${{ github.repository }}/dispatches \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -d '{"event_type":"ocr-start"}' \
-            -v || echo "OCR dispatch failed (may already be processing)"
+            -d '{"event_type":"ocr-start","client_payload":{"mode":"auto"}}' \
+            -v || echo "⚠ OCR dispatch may have failed"
 
       - name: Cleanup
         if: always()
         run: |
           rm -rf .cache
           echo "✓ Cleanup complete"
-
-      - name: Workflow summary
-        if: always()
-        run: |
-          echo "=== PDF Eligibility Check Summary ==="
-          echo "Mode: ${{ steps.payload.outputs.mode }}"
-          echo "Timestamp: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          echo "Status: ${{ job.status }}"

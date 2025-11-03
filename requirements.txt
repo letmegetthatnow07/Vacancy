@@ -1,11 +1,16 @@
+# Web scraping & HTTP
 requests>=2.31.0
 beautifulsoup4>=4.12.0
 lxml>=4.9.0
+cloudscraper>=1.2.71
+urllib3>=2.0.0
+
+# PDF processing
 PyPDF2>=3.0.0
 pdfplumber>=0.10.0
-python-dateutil>=2.8.0
-cloudscraper>=1.2.71
 pdf2image>=1.16.0
 pytesseract>=0.3.10
 pillow>=10.0.0
-urllib3>=2.0.0
+
+# Data processing
+python-dateutil>=2.8.0

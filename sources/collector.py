@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 # collector.py — COMPLETE HYBRID: All quality + All aggregator logic + All PDF extraction
 # FINAL: Everything from OLD code + permissive filtering + agg corroboration
+# FIX: Added urllib3 + verify=False for SSL bypass
 
 import requests, json, sys, re, time, os, hashlib, pathlib
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 from collections import defaultdict
+import urllib3
+
+# Disable SSL warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 UA = {"User-Agent":"Mozilla/5.0"}
 

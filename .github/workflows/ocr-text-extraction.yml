@@ -1,0 +1,251 @@
+name: OCR Text Extraction
+
+on:
+  repository_dispatch:
+    types: [ocr-start]
+  workflow_dispatch:
+    inputs:
+      pdf_urls:
+        description: 'JSON array of PDF URLs'
+        required: true
+        default: '[]'
+
+permissions:
+  contents: write
+
+jobs:
+  ocr-extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            tesseract-ocr \
+            tesseract-ocr-hin \
+            poppler-utils \
+            libpoppler-cpp-dev
+
+      - name: Install Python dependencies
+        run: |
+          pip install --quiet --upgrade pip
+          pip install --quiet -r requirements.txt
+
+      - name: Extract text with OCR
+        run: |
+          python3 << 'PYTHON_SCRIPT'
+          import json, subprocess, pathlib, sys, glob
+          from pathlib import Path
+          
+          # Look for PDFs in .cache or current directory
+          pdfs = sorted(Path('.').glob('.cache/pdf_*')) or sorted(Path('.').glob('pdf_*'))
+          
+          if not pdfs:
+              print("[WARN] No PDFs found to process", file=sys.stderr)
+              sys.exit(0)
+          
+          results = []
+          print(f"Starting OCR on {len(pdfs)} PDFs...", file=sys.stderr)
+          
+          for i, pdf_file in enumerate(pdfs):
+              print(f"\n[{i+1}/{len(pdfs)}] Processing: {pdf_file.name}", file=sys.stderr)
+              
+              try:
+                  # FIX P3-H-001: Use pdf_parser.py with deterministic IDs
+                  result = subprocess.run(
+                      ['python3', 'tools/pdf_parser.py', str(pdf_file)],
+                      capture_output=True,
+                      text=True,
+                      timeout=120
+                  )
+                  
+                  if result.returncode == 0:
+                      # Parse JSONL output (stdout only, no debug)
+                      for line in result.stdout.strip().split('\n'):
+                          if line.strip() and line.startswith('{'):
+                              try:
+                                  job = json.loads(line)
+                                  results.append(job)
+                                  print(f"  ✓ {job.get('title', 'N/A')[:50]}", file=sys.stderr)
+                              except json.JSONDecodeError:
+                                  pass
+                  else:
+                      print(f"  ✗ OCR failed (code {result.returncode})", file=sys.stderr)
+                      if result.stderr:
+                          print(f"     {result.stderr[:150]}", file=sys.stderr)
+              
+              except subprocess.TimeoutExpired:
+                  print(f"  ✗ Timeout (120s)", file=sys.stderr)
+              except Exception as e:
+                  print(f"  ✗ Error: {e}", file=sys.stderr)
+          
+          # Write results
+          pathlib.Path('tmp').mkdir(exist_ok=True)
+          with open('tmp/ocr_results.jsonl', 'w', encoding='utf-8') as f:
+              for job in results:
+                  f.write(json.dumps(job, ensure_ascii=False) + '\n')
+          
+          print(f"\n✓ Extracted {len(results)} jobs from {len(pdfs)} PDFs", file=sys.stderr)
+          PYTHON_SCRIPT
+
+      - name: Merge OCR results (WITHOUT re-running schema_merge)
+        run: |
+          # FIX P3-C-003: DO NOT run schema_merge - it already ran in scraper
+          # Only: enrich existing jobs with OCR data + preserve applied_ids
+          
+          python3 << 'PYTHON_SCRIPT'
+          import json, pathlib
+          from datetime import datetime
+          
+          # Load existing data
+          try:
+              data = json.load(open('data.json'))
+          except:
+              print("[ERROR] data.json missing", file=__import__('sys').stderr)
+              __import__('sys').exit(1)
+          
+          existing_jobs = data.get('jobListings', [])
+          ocr_jobs = []
+          
+          # Load OCR results
+          if pathlib.Path('tmp/ocr_results.jsonl').exists():
+              for line in open('tmp/ocr_results.jsonl'):
+                  if line.strip():
+                      try:
+                          ocr_jobs.append(json.loads(line))
+                      except:
+                          pass
+          
+          # FIX P3-C-004: Preserve applied_ids BEFORE any merge
+          applied_ids = set(data.get('sections', {}).get('applied', []))
+          other_ids = set(data.get('sections', {}).get('other', []))
+          
+          print(f"[OCR] Preserving {len(applied_ids)} applied jobs, {len(other_ids)} other marked", file=__import__('sys').stderr)
+          
+          # Merge OCR data ONLY - don't duplicate jobs
+          merged_count = 0
+          for ocr_job in ocr_jobs:
+              ocr_id = ocr_job.get('id')
+              
+              # Find matching job by ID
+              found = False
+              for j in existing_jobs:
+                  if j.get('id') == ocr_id:
+                      # Enrich with OCR data (only fill gaps)
+                      for k in ['numberOfPosts', 'deadline', 'qualificationLevel']:
+                          if ocr_job.get(k) and not j.get(k):
+                              j[k] = ocr_job[k]
+                      found = True
+                      break
+              
+              if not found:
+                  # New job from OCR (rare but possible)
+                  existing_jobs.append(ocr_job)
+                  merged_count += 1
+          
+          # Preserve applied_ids and other_ids (CRITICAL!)
+          data['sections'] = data.get('sections', {})
+          data['sections']['applied'] = list(applied_ids)
+          data['sections']['other'] = list(other_ids)
+          
+          # Update metadata
+          data['transparencyInfo'] = data.get('transparencyInfo', {})
+          data['transparencyInfo']['lastOCRUpdate'] = datetime.utcnow().isoformat() + 'Z'
+          data['transparencyInfo']['ocr_jobs_merged'] = merged_count
+          
+          # Write back atomically
+          temp_path = 'data.json.tmp'
+          pathlib.Path(temp_path).write_text(
+              json.dumps(data, indent=2, ensure_ascii=False),
+              encoding='utf-8'
+          )
+          __import__('os').replace(temp_path, 'data.json')
+          
+          print(f"[OCR] Merged {merged_count} new jobs, preserved applied_ids", file=__import__('sys').stderr)
+          PYTHON_SCRIPT
+
+      - name: Run QC checks (validation only)
+        run: |
+          # FIX P3-C-005: Run ONLY qc_checks.py for validation + dedup
+          # DO NOT run qc_and_learn.py (already ran in scraper)
+          python3 tools/qc_checks.py
+          echo "✓ QC checks complete"
+
+      - name: Generate health report
+        run: |
+          python3 << 'PYTHON_SCRIPT'
+          import json
+          from datetime import datetime
+          
+          data = json.load(open('data.json'))
+          
+          health = {
+              'ok': True,
+              'totalListings': len(data.get('jobListings', [])),
+              'archivedCount': len(data.get('archivedListings', [])),
+              'appliedCount': len(data.get('sections', {}).get('applied', [])),
+              'lastUpdated': datetime.utcnow().isoformat() + 'Z',
+              'source': 'github-actions-ocr'
+          }
+          
+          with open('health.json', 'w') as f:
+              json.dump(health, f, indent=2)
+          
+          print(f"✓ Health: {health['totalListings']} active, {health['appliedCount']} applied")
+          PYTHON_SCRIPT
+
+      - name: Configure git
+        run: |
+          git config user.name "OCR Bot"
+          git config user.email "ocr-bot@users.noreply.github.com"
+
+      - name: Pull before push (prevent conflicts)
+        run: |
+          # FIX P3-C-006: Atomic pull+push to prevent race conditions
+          git pull --rebase origin main || true
+
+      - name: Commit and push
+        run: |
+          git add data.json health.json 2>/dev/null || true
+          
+          if git diff --cached --quiet; then
+            echo "ℹ No changes to commit (OCR merged with existing data)"
+          else
+            git commit -m "chore: OCR enrichment $(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+              -m "Source: github-actions-ocr" \
+              -m "Applied jobs: preserved"
+            
+            echo "Pushing to main..."
+            git push origin main
+            echo "✓ Committed and pushed OCR results"
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf .cache tmp/*.jsonl tmp/download_log.json
+          echo "✓ Cache cleaned"
+
+      - name: Workflow summary
+        if: always()
+        run: |
+          echo "=== OCR Workflow Complete ==="
+          echo "Timestamp: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          echo "Status: ${{ job.status }}"
+          
+          if [ -f data.json ]; then
+            python3 -c "import json; d=json.load(open('data.json')); print(f'Total listings: {len(d.get(\"jobListings\", []))}')"
+          fi

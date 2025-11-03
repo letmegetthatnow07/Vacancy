@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # collector.py — COMPLETE HYBRID: All quality + All aggregator logic + All PDF extraction
 # FINAL: Everything from OLD code + permissive filtering + agg corroboration
-# FIX: Added urllib3 + verify=False for SSL bypass
+# FIX: Added urllib3 + verify=False for SSL bypass EVERYWHERE
 
 import requests, json, sys, re, time, os, hashlib, pathlib
 from bs4 import BeautifulSoup
@@ -111,13 +111,14 @@ def posts_from_text(txt):
     except: 
         return None
 
-# RESTORED: PDF extraction (from OLD code)
+# RESTORED: PDF extraction (from OLD code) - WITH SSL FIX
 def extract_pdf_link(job_url, base_url):
     """Extract PDF link from job posting page"""
     try:
         if not job_url or not isinstance(job_url, str):
             return None, False
         
+        # FIX: verify=False to disable SSL verification
         r = requests.get(job_url, timeout=15, headers=UA, verify=False)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
@@ -134,11 +135,14 @@ def extract_pdf_link(job_url, base_url):
     except requests.Timeout:
         print(f"[TIMEOUT] extract_pdf_link: {job_url[:60]}", file=sys.stderr)
         return None, False
+    except requests.exceptions.SSLError as e:
+        print(f"[SSL_ERR] extract_pdf_link {job_url[:60]}: {str(e)[:80]}", file=sys.stderr)
+        return None, False
     except requests.ConnectionError:
         print(f"[CONN_ERR] extract_pdf_link: {job_url[:60]}", file=sys.stderr)
         return None, False
     except Exception as e:
-        print(f"[PDF_ERR] {job_url[:60]}: {type(e).__name__}", file=sys.stderr)
+        print(f"[PDF_ERR] {job_url[:60]}: {type(e).__name__}: {str(e)[:80]}", file=sys.stderr)
         return None, False
 
 def is_relevant(title):
@@ -164,6 +168,7 @@ def is_relevant(title):
 def fetch_site(url, selector):
     """Fetch jobs from a site"""
     try:
+        # FIX: verify=False to disable SSL verification
         r = requests.get(url, timeout=30, headers=UA, verify=False)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
@@ -185,6 +190,12 @@ def fetch_site(url, selector):
         print(f"[FETCH_OK] {url[:50]}: found {len(jobs)} jobs", file=sys.stderr)
         return jobs
     
+    except requests.exceptions.SSLError as e:
+        print(f"[SSL_ERR] {url[:50]}: {str(e)[:80]}", file=sys.stderr)
+        return []
+    except requests.Timeout:
+        print(f"[TIMEOUT] {url[:50]}", file=sys.stderr)
+        return []
     except Exception as e:
         print(f"[FETCH_ERR] {url[:50]}: {type(e).__name__}", file=sys.stderr)
         return []

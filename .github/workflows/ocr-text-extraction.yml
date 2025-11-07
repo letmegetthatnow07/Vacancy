@@ -48,6 +48,7 @@ steps:
     continue-on-error: true
 
   - name: Rehydrate .cache from queue
+    shell: bash
     run: |
       mkdir -p .cache tmp
       python3 << 'PY'
@@ -65,7 +66,6 @@ steps:
         except Exception as e:
           print(f"[WARN] Bad tmp/download_log.json: {e}", file=sys.stderr)
 
-      # If we have files recorded with local filenames, ensure they exist under .cache
       ensured = 0
       for x in downloaded:
         fn = x.get('filename')
@@ -80,7 +80,6 @@ steps:
               shutil.copy2(src, dst)
             ensured += 1
           else:
-            # If the file is not present in workspace, try re-downloading from URL
             if url:
               try:
                 print(f"[rehydrate] downloading missing: {url[:80]}", file=sys.stderr)
@@ -103,7 +102,6 @@ steps:
         except Exception as e:
           print(f"[rehydrate] ensure failed for {fn}: {e}", file=sys.stderr)
 
-      # If .cache is still empty but OCR queue exists, fetch from ocr_queue directly
       cache_files = list(pathlib.Path('.cache').glob('pdf_*')) + list(pathlib.Path('.cache').glob('*.pdf'))
       if not cache_files and queue_path.exists():
         try:
@@ -139,9 +137,10 @@ steps:
       PY
 
   - name: Extract text with OCR
+    shell: bash
     run: |
       python3 << 'PYTHON_SCRIPT'
-      import json, subprocess, pathlib, sys, glob
+      import json, subprocess, pathlib, sys
       from pathlib import Path
       
       pdfs = sorted(Path('.').glob('.cache/pdf_*')) or sorted(Path('.').glob('.cache/*.pdf')) or sorted(Path('.').glob('pdf_*'))
@@ -155,7 +154,6 @@ steps:
       
       for i, pdf_file in enumerate(pdfs):
           print(f"\n[{i+1}/{len(pdfs)}] Processing: {pdf_file.name}", file=sys.stderr)
-          
           try:
               result = subprocess.run(
                   ['python3', 'tools/pdf_parser.py', str(pdf_file)],
@@ -163,7 +161,6 @@ steps:
                   text=True,
                   timeout=120
               )
-              
               if result.returncode == 0:
                   for line in result.stdout.strip().split('\n'):
                       if line.strip() and line.startswith('{'):
@@ -177,7 +174,6 @@ steps:
                   print(f"  ✗ OCR failed (code {result.returncode})", file=sys.stderr)
                   if result.stderr:
                       print(f"     {result.stderr[:150]}", file=sys.stderr)
-          
           except subprocess.TimeoutExpired:
               print(f"  ✗ Timeout (120s)", file=sys.stderr)
           except Exception as e:
@@ -192,6 +188,7 @@ steps:
       PYTHON_SCRIPT
 
   - name: Merge OCR results (WITHOUT re-running schema_merge)
+    shell: bash
     run: |
       python3 << 'PYTHON_SCRIPT'
       import json, pathlib
@@ -258,6 +255,7 @@ steps:
       echo "✓ QC checks complete"
 
   - name: Generate health report
+    shell: bash
     run: |
       python3 << 'PY'
       import json

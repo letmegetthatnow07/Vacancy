@@ -4,6 +4,7 @@ import subprocess
 import sys
 import requests
 from datetime import datetime
+
 def handler(request):
 try:
 project_root = os.getcwd()
@@ -23,7 +24,6 @@ print(f"[INFO] Project root: {project_root}", file=sys.stderr)
                 })
             }
 
-    # Pull user_state from Cloudflare KV (optional)
     print("[STEP 0] Fetching user_state from Cloudflare KV...", file=sys.stderr)
     kv_account = os.environ.get('CLOUDFLARE_KV_ACCOUNT_ID')
     kv_token = os.environ.get('CLOUDFLARE_KV_API_TOKEN')
@@ -48,7 +48,6 @@ print(f"[INFO] Project root: {project_root}", file=sys.stderr)
     else:
         print("[WARN] Missing KV credentials - using empty user_state", file=sys.stderr)
 
-    # Write user_state locally (for qc_and_learn.py)
     try:
         with open('user_state.json', 'w', encoding='utf-8') as f:
             json.dump(user_state_data, f, indent=2, ensure_ascii=False)
@@ -56,7 +55,6 @@ print(f"[INFO] Project root: {project_root}", file=sys.stderr)
     except Exception as e:
         print(f"[WARN] Writing user_state.json failed: {e}", file=sys.stderr)
 
-    # Collector
     print("[STEP 1] Running collector...", file=sys.stderr)
     collector_result = subprocess.run(
         [sys.executable, os.path.join(project_root, 'tools/collector.py')],
@@ -93,7 +91,6 @@ print(f"[INFO] Project root: {project_root}", file=sys.stderr)
             f.write(json.dumps(cand, ensure_ascii=False) + '\n')
     print(f"[OK] Collector: {len(candidates)} candidates -> tmp/candidates.jsonl", file=sys.stderr)
 
-    # Schema merge
     print("[STEP 2] Running schema merge...", file=sys.stderr)
     data_json_path = os.path.join(project_root, 'data.json')
     merge_result = subprocess.run(
@@ -107,7 +104,6 @@ print(f"[INFO] Project root: {project_root}", file=sys.stderr)
         print(f"[WARN] Schema merge non-zero: {merge_result.stderr}", file=sys.stderr)
     print("[OK] Schema merge completed", file=sys.stderr)
 
-    # QC & Learn
     print("[STEP 3] Running QC and Learn...", file=sys.stderr)
     qc_result = subprocess.run(
         [sys.executable, os.path.join(project_root, 'qc_and_learn.py'), '--mode', 'nightly'],
@@ -120,7 +116,6 @@ print(f"[INFO] Project root: {project_root}", file=sys.stderr)
         print(f"[WARN] QC returned non-zero: {qc_result.stderr}", file=sys.stderr)
     print("[OK] QC completed", file=sys.stderr)
 
-    # Final data.json
     print("[STEP 4] Reading final data.json...", file=sys.stderr)
     try:
         with open(data_json_path, 'r', encoding='utf-8') as f:
@@ -139,12 +134,10 @@ print(f"[INFO] Project root: {project_root}", file=sys.stderr)
             })
         }
 
-    # KV save (guard against empty)
     print("[STEP 5] Saving to Cloudflare KV...", file=sys.stderr)
     kv_saved = False
     if kv_account and kv_token and kv_namespace:
         try:
-            # Always write health.json (observability)
             health_data = {
                 'ok': True,
                 'totalListings': job_count,
@@ -163,7 +156,6 @@ print(f"[INFO] Project root: {project_root}", file=sys.stderr)
             else:
                 print(f"[WARN] Health save failed: {hr.status_code}", file=sys.stderr)
 
-            # Only write data.json if non-empty
             if job_count > 0:
                 kv_data_url = f"https://api.cloudflare.com/client/v4/accounts/{kv_account}/storage/kv/namespaces/{kv_namespace}/values/data.json"
                 dr = requests.put(
